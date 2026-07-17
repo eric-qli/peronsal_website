@@ -1,7 +1,8 @@
 "use client";
 
+import { useCallback, useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { Clock, FileText } from "lucide-react";
+import { Clock, Loader2 } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -9,34 +10,69 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { type RecentInput } from "@/lib/mock-jobfind-data";
+import { getApplications, JobFindApiError } from "@/lib/jobfind/api";
+import { statusLabels } from "@/lib/jobfind/types";
+import { formatDisplayDate } from "@/lib/jobfind/utils";
 
 interface RecentInputsProps {
-  inputs: RecentInput[];
+  refreshKey?: number;
 }
 
-function formatRelativeDate(isoDate: string) {
-  const date = new Date(isoDate);
-  return date.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
+export function RecentInputs({ refreshKey = 0 }: RecentInputsProps) {
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [items, setItems] = useState<
+    Awaited<ReturnType<typeof getApplications>>
+  >([]);
 
-export function RecentInputs({ inputs }: RecentInputsProps) {
+  const loadRecent = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const data = await getApplications({ sort: "newest" });
+      setItems(data.slice(0, 3));
+    } catch (err) {
+      setError(
+        err instanceof JobFindApiError
+          ? err.message
+          : "Failed to load recent applications."
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      void loadRecent();
+    }, 0);
+
+    return () => clearTimeout(timeout);
+  }, [loadRecent, refreshKey]);
+
   return (
     <section className="space-y-4">
-      <h2 className="text-lg font-semibold tracking-tight">Recent Inputs</h2>
-      {inputs.length === 0 ? (
+      <h2 className="text-lg font-semibold tracking-tight">Recent Applications</h2>
+
+      {isLoading ? (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="size-4 animate-spin" />
+          Loading recent applications...
+        </div>
+      ) : error ? (
+        <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          {error}
+        </p>
+      ) : items.length === 0 ? (
         <p className="rounded-xl border border-dashed border-border/60 bg-card/40 px-4 py-8 text-center text-sm text-muted-foreground">
-          No job descriptions submitted yet.
+          No applications saved yet.
         </p>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {inputs.map((input, index) => (
+          {items.map((item, index) => (
             <motion.div
-              key={input.id}
+              key={item.id}
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{
@@ -45,30 +81,25 @@ export function RecentInputs({ inputs }: RecentInputsProps) {
                 ease: [0.21, 0.47, 0.32, 0.98],
               }}
             >
-              <Card className="h-full cursor-pointer border-border/60 bg-card/60 transition-colors hover:border-primary/30 hover:bg-card/80">
+              <Card className="h-full border-border/60 bg-card/60">
                 <CardHeader className="pb-2">
-                  <div className="flex items-start gap-3">
-                    <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                      <FileText className="size-4" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <CardTitle className="truncate text-base">
-                        {input.title}
-                      </CardTitle>
-                      <CardDescription className="mt-1 flex items-center gap-1.5">
-                        <Clock className="size-3" />
-                        {formatRelativeDate(input.pastedAt)}
-                      </CardDescription>
-                    </div>
-                  </div>
+                  <CardTitle className="truncate text-base">
+                    {item.position} — {item.company}
+                  </CardTitle>
+                  <CardDescription className="mt-1 flex items-center gap-1.5">
+                    <Clock className="size-3" />
+                    {formatDisplayDate(item.dateApplied)}
+                  </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <p className="line-clamp-3 text-sm leading-relaxed text-muted-foreground">
-                    {input.preview}
+                  <p className="text-sm text-muted-foreground">
+                    Status: {statusLabels[item.status]}
                   </p>
-                  <p className="mt-3 text-xs text-muted-foreground">
-                    {input.characterCount.toLocaleString()} characters
-                  </p>
+                  {item.notes && (
+                    <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">
+                      {item.notes}
+                    </p>
+                  )}
                 </CardContent>
               </Card>
             </motion.div>

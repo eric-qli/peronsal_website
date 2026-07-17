@@ -3,12 +3,12 @@
 import {
   Briefcase,
   CalendarCheck,
+  ClipboardList,
   Handshake,
-  TrendingUp,
   XCircle,
 } from "lucide-react";
 import { StatCard } from "@/components/jobfind/stat-card";
-import { type ApplicationStats } from "@/lib/mock-jobfind-data";
+import { type ApplicationStats } from "@/lib/jobfind/types";
 
 interface SummaryStatsProps {
   stats: ApplicationStats;
@@ -21,6 +21,12 @@ export function SummaryStats({ stats }: SummaryStatsProps) {
       value: stats.applications,
       icon: Briefcase,
       accent: "default" as const,
+    },
+    {
+      label: "OA",
+      value: stats.oa,
+      icon: ClipboardList,
+      accent: "warning" as const,
     },
     {
       label: "Interviews",
@@ -39,12 +45,6 @@ export function SummaryStats({ stats }: SummaryStatsProps) {
       value: stats.rejections,
       icon: XCircle,
       accent: "danger" as const,
-    },
-    {
-      label: "Response Rate",
-      value: `${stats.responseRate}%`,
-      icon: TrendingUp,
-      accent: "warning" as const,
     },
   ];
 

@@ -1,9 +1,19 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { Search } from "lucide-react";
+import {
+  ExternalLink,
+  Loader2,
+  Pencil,
+  Search,
+  Trash2,
+} from "lucide-react";
+import { ApplicationEditDialog } from "@/components/jobfind/application-edit-dialog";
+import { DeleteApplicationDialog } from "@/components/jobfind/delete-application-dialog";
+import { StatusSelect } from "@/components/jobfind/status-select";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -21,123 +31,108 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
-  type Application,
-  type ApplicationStatus,
-  type SortOption,
+  deleteApplication,
+  getApplications,
+  JobFindApiError,
+  updateApplication,
+} from "@/lib/jobfind/api";
+import {
   sortOptions,
   statusFilterOptions,
-} from "@/lib/mock-jobfind-data";
-import { cn } from "@/lib/utils";
+  statusLabels,
+  type ApplicationStatus,
+  type JobApplication,
+  type SortOption,
+  type StatusFilter,
+} from "@/lib/jobfind/types";
+import { formatDisplayDate } from "@/lib/jobfind/utils";
 
 interface ApplicationTableProps {
-  applications: Application[];
+  onMutation?: () => void;
+  refreshKey?: number;
 }
 
-const statusVariant: Record<
-  ApplicationStatus,
-  "default" | "secondary" | "outline" | "destructive"
-> = {
-  Applied: "secondary",
-  Interview: "default",
-  Offer: "default",
-  Rejected: "destructive",
-  Pending: "outline",
-};
-
-const statusClassName: Record<ApplicationStatus, string> = {
-  Applied: "",
-  Interview: "bg-emerald-500/15 text-emerald-300 border-emerald-500/25",
-  Offer: "bg-accent/15 text-accent border-accent/25",
-  Rejected: "",
-  Pending: "",
-};
-
-function formatDate(isoDate: string) {
-  return new Date(isoDate).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
-function sortApplications(
-  applications: Application[],
-  sortBy: SortOption
-): Application[] {
-  const sorted = [...applications];
-
-  switch (sortBy) {
-    case "date-desc":
-      return sorted.sort(
-        (a, b) =>
-          new Date(b.dateApplied).getTime() - new Date(a.dateApplied).getTime()
-      );
-    case "date-asc":
-      return sorted.sort(
-        (a, b) =>
-          new Date(a.dateApplied).getTime() - new Date(b.dateApplied).getTime()
-      );
-    case "company-asc":
-      return sorted.sort((a, b) => a.company.localeCompare(b.company));
-    case "company-desc":
-      return sorted.sort((a, b) => b.company.localeCompare(a.company));
-    case "match-desc":
-      return sorted.sort((a, b) => b.resumeMatch - a.resumeMatch);
-    case "match-asc":
-      return sorted.sort((a, b) => a.resumeMatch - b.resumeMatch);
-    default:
-      return sorted;
-  }
-}
-
-function MatchIndicator({ value }: { value: number }) {
-  const color =
-    value >= 85
-      ? "text-emerald-400"
-      : value >= 70
-        ? "text-amber-400"
-        : "text-red-400";
-
-  return (
-    <div className="flex items-center gap-2">
-      <div className="h-1.5 w-16 overflow-hidden rounded-full bg-muted">
-        <div
-          className={cn("h-full rounded-full bg-current", color)}
-          style={{ width: `${value}%` }}
-        />
-      </div>
-      <span className={cn("text-sm font-medium tabular-nums", color)}>
-        {value}%
-      </span>
-    </div>
-  );
-}
-
-export function ApplicationTable({ applications }: ApplicationTableProps) {
+export function ApplicationTable({
+  onMutation,
+  refreshKey = 0,
+}: ApplicationTableProps) {
+  const [applications, setApplications] = useState<JobApplication[]>([]);
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<ApplicationStatus | "All">(
-    "All"
-  );
-  const [sortBy, setSortBy] = useState<SortOption>("date-desc");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [sortBy, setSortBy] = useState<SortOption>("newest");
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<JobApplication | null>(null);
+  const [editTarget, setEditTarget] = useState<JobApplication | null>(null);
 
-  const filteredApplications = useMemo(() => {
-    const query = search.trim().toLowerCase();
+  const loadApplications = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
 
-    const filtered = applications.filter((app) => {
-      const matchesStatus =
-        statusFilter === "All" || app.status === statusFilter;
-      const matchesSearch =
-        !query ||
-        app.company.toLowerCase().includes(query) ||
-        app.position.toLowerCase().includes(query) ||
-        app.location.toLowerCase().includes(query) ||
-        app.keywords.some((keyword) => keyword.toLowerCase().includes(query));
+    try {
+      const data = await getApplications({
+        status: statusFilter,
+        search,
+        sort: sortBy,
+      });
+      setApplications(data);
+    } catch (err) {
+      setError(
+        err instanceof JobFindApiError
+          ? err.message
+          : "Failed to load applications."
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  }, [search, sortBy, statusFilter]);
 
-      return matchesStatus && matchesSearch;
-    });
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      void loadApplications();
+    }, search ? 250 : 0);
 
-    return sortApplications(filtered, sortBy);
-  }, [applications, search, sortBy, statusFilter]);
+    return () => clearTimeout(timeout);
+  }, [loadApplications, refreshKey, search]);
+
+  async function handleStatusChange(
+    application: JobApplication,
+    status: ApplicationStatus
+  ) {
+    if (application.status === status || updatingId) return;
+
+    setUpdatingId(application.id);
+    setError(null);
+
+    try {
+      await updateApplication(application.id, { status });
+      await loadApplications();
+      onMutation?.();
+    } catch (err) {
+      setError(
+        err instanceof JobFindApiError
+          ? err.message
+          : "Failed to update application status."
+      );
+    } finally {
+      setUpdatingId(null);
+    }
+  }
+
+  async function handleDeleteConfirm() {
+    if (!deleteTarget) return;
+
+    await deleteApplication(deleteTarget.id);
+    setDeleteTarget(null);
+    await loadApplications();
+    onMutation?.();
+  }
+
+  const emptyMessage =
+    search || statusFilter !== "all"
+      ? "No applications match your filters."
+      : "No applications yet. Add one from the Input page.";
 
   return (
     <motion.div
@@ -160,9 +155,7 @@ export function ApplicationTable({ applications }: ApplicationTableProps) {
         <div className="flex flex-wrap items-center gap-3">
           <Select
             value={statusFilter}
-            onValueChange={(value) =>
-              setStatusFilter(value as ApplicationStatus | "All")
-            }
+            onValueChange={(value) => setStatusFilter(value as StatusFilter)}
           >
             <SelectTrigger className="w-full min-w-[140px] sm:w-[160px]">
               <SelectValue placeholder="Status" />
@@ -170,7 +163,7 @@ export function ApplicationTable({ applications }: ApplicationTableProps) {
             <SelectContent>
               {statusFilterOptions.map((status) => (
                 <SelectItem key={status} value={status}>
-                  {status === "All" ? "All Statuses" : status}
+                  {status === "all" ? "All Statuses" : statusLabels[status]}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -194,73 +187,154 @@ export function ApplicationTable({ applications }: ApplicationTableProps) {
         </div>
       </div>
 
+      {error && (
+        <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          {error}
+        </p>
+      )}
+
       <div className="overflow-hidden rounded-xl border border-border/60 bg-card/60 backdrop-blur-sm">
-        <Table>
-          <TableHeader>
-            <TableRow className="hover:bg-transparent">
-              <TableHead>Company</TableHead>
-              <TableHead>Position</TableHead>
-              <TableHead className="hidden md:table-cell">Location</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="hidden sm:table-cell">Date Applied</TableHead>
-              <TableHead>Resume Match</TableHead>
-              <TableHead className="hidden lg:table-cell">Keywords</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filteredApplications.length === 0 ? (
-              <TableRow>
-                <TableCell
-                  colSpan={7}
-                  className="h-24 text-center text-muted-foreground"
-                >
-                  No applications match your filters.
-                </TableCell>
+        {isLoading ? (
+          <div className="flex h-40 items-center justify-center gap-2 text-muted-foreground">
+            <Loader2 className="size-5 animate-spin" />
+            Loading applications...
+          </div>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead>Company</TableHead>
+                <TableHead>Position</TableHead>
+                <TableHead className="hidden md:table-cell">Location</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="hidden sm:table-cell">Date Applied</TableHead>
+                <TableHead className="hidden lg:table-cell">Required Skills</TableHead>
+                <TableHead className="hidden xl:table-cell">Source URL</TableHead>
+                <TableHead className="hidden 2xl:table-cell">Notes</TableHead>
+                <TableHead className="w-[96px]">Actions</TableHead>
               </TableRow>
-            ) : (
-              filteredApplications.map((app) => (
-                <TableRow key={app.id}>
-                  <TableCell className="font-medium">{app.company}</TableCell>
-                  <TableCell className="max-w-[180px] truncate text-muted-foreground">
-                    {app.position}
-                  </TableCell>
-                  <TableCell className="hidden text-muted-foreground md:table-cell">
-                    {app.location}
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      variant={statusVariant[app.status]}
-                      className={statusClassName[app.status]}
-                    >
-                      {app.status}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="hidden text-muted-foreground sm:table-cell">
-                    {formatDate(app.dateApplied)}
-                  </TableCell>
-                  <TableCell>
-                    <MatchIndicator value={app.resumeMatch} />
-                  </TableCell>
-                  <TableCell className="hidden lg:table-cell">
-                    <div className="flex flex-wrap gap-1">
-                      {app.keywords.map((keyword) => (
-                        <Badge key={keyword} variant="outline" className="text-xs">
-                          {keyword}
-                        </Badge>
-                      ))}
-                    </div>
+            </TableHeader>
+            <TableBody>
+              {applications.length === 0 ? (
+                <TableRow>
+                  <TableCell
+                    colSpan={9}
+                    className="h-24 text-center text-muted-foreground"
+                  >
+                    {emptyMessage}
                   </TableCell>
                 </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
+              ) : (
+                applications.map((app) => (
+                  <TableRow key={app.id}>
+                    <TableCell className="font-medium">{app.company}</TableCell>
+                    <TableCell className="max-w-[180px] truncate text-muted-foreground">
+                      {app.position}
+                    </TableCell>
+                    <TableCell className="hidden text-muted-foreground md:table-cell">
+                      {app.location ?? "—"}
+                    </TableCell>
+                    <TableCell>
+                      <StatusSelect
+                        value={app.status}
+                        onValueChange={(status) =>
+                          void handleStatusChange(app, status)
+                        }
+                        disabled={updatingId === app.id}
+                      />
+                    </TableCell>
+                    <TableCell className="hidden text-muted-foreground sm:table-cell">
+                      {formatDisplayDate(app.dateApplied)}
+                    </TableCell>
+                    <TableCell className="hidden lg:table-cell">
+                      <div className="flex max-w-[220px] flex-wrap gap-1">
+                        {app.requiredSkills.length > 0 ? (
+                          app.requiredSkills.map((skill) => (
+                            <Badge key={skill} variant="outline" className="text-xs">
+                              {skill}
+                            </Badge>
+                          ))
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell className="hidden xl:table-cell">
+                      {app.sourceUrl ? (
+                        <a
+                          href={app.sourceUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex max-w-[220px] items-center gap-1 truncate text-sm text-accent hover:underline"
+                        >
+                          <ExternalLink className="size-3 shrink-0" />
+                          {app.sourceUrl.replace(/^https?:\/\//, "")}
+                        </a>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="hidden max-w-[220px] truncate text-muted-foreground 2xl:table-cell">
+                      {app.notes ?? "—"}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          onClick={() => setEditTarget(app)}
+                          aria-label={`Edit ${app.company} application`}
+                        >
+                          <Pencil className="size-4 text-muted-foreground" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          onClick={() => setDeleteTarget(app)}
+                          aria-label={`Delete ${app.company} application`}
+                        >
+                          <Trash2 className="size-4 text-muted-foreground" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        )}
       </div>
 
-      <p className="text-sm text-muted-foreground">
-        Showing {filteredApplications.length} of {applications.length}{" "}
-        applications
-      </p>
+      {!isLoading && (
+        <p className="text-sm text-muted-foreground">
+          Showing {applications.length} application
+          {applications.length === 1 ? "" : "s"}
+        </p>
+      )}
+
+      <ApplicationEditDialog
+        application={editTarget}
+        open={Boolean(editTarget)}
+        onOpenChange={(open) => {
+          if (!open) setEditTarget(null);
+        }}
+        onSaved={async () => {
+          await loadApplications();
+          onMutation?.();
+        }}
+      />
+
+      {deleteTarget && (
+        <DeleteApplicationDialog
+          company={deleteTarget.company}
+          position={deleteTarget.position}
+          open={Boolean(deleteTarget)}
+          onOpenChange={(open) => {
+            if (!open) setDeleteTarget(null);
+          }}
+          onConfirm={handleDeleteConfirm}
+        />
+      )}
     </motion.div>
   );
 }
