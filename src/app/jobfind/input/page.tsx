@@ -7,10 +7,10 @@ export default function JobFindInputPage() {
     <div className="space-y-10">
       <header className="space-y-2">
         <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">
-          Job Listing Input
+          Job Description Input
         </h1>
         <p className="max-w-2xl text-muted-foreground">
-          Enter a job listing URL below to extract useful information.
+          Paste a job description below to extract useful information.
         </p>
       </header>
 

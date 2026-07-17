@@ -2,36 +2,23 @@
 
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Link2, Sparkles, Trash2 } from "lucide-react";
+import { Sparkles, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { cn } from "@/lib/utils";
+import { Textarea } from "@/components/ui/textarea";
 
-function isValidUrl(value: string): boolean {
-  try {
-    const url = new URL(value);
-    return url.protocol === "http:" || url.protocol === "https:";
-  } catch {
-    return false;
-  }
-}
+const MAX_CHARACTERS = 10000;
 
 export function InputForm() {
   const [value, setValue] = useState("");
-  const [touched, setTouched] = useState(false);
 
-  const trimmed = value.trim();
-  const isValid = trimmed.length > 0 && isValidUrl(trimmed);
-  const showError = touched && trimmed.length > 0 && !isValid;
+  const characterCount = value.length;
+  const isOverLimit = characterCount > MAX_CHARACTERS;
 
   function handleClear() {
     setValue("");
-    setTouched(false);
   }
 
   function handleExtract() {
-    setTouched(true);
-    if (!isValid) return;
     // Phase 1: placeholder for future AI integration
   }
 
@@ -42,34 +29,26 @@ export function InputForm() {
       transition={{ duration: 0.5, ease: [0.21, 0.47, 0.32, 0.98] }}
       className="space-y-4"
     >
-      <div className="space-y-2">
-        <div className="relative">
-          <Link2 className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            type="url"
-            value={value}
-            onChange={(event) => setValue(event.target.value)}
-            onBlur={() => setTouched(true)}
-            placeholder="https://company.com/careers/job-id"
-            className={cn(
-              "h-12 pl-10 text-base",
-              showError && "border-destructive ring-destructive/20"
-            )}
-            aria-label="Job listing URL"
-            aria-invalid={showError}
-          />
+      <div className="relative">
+        <Textarea
+          value={value}
+          onChange={(event) => setValue(event.target.value)}
+          placeholder="Paste a job description here..."
+          className="min-h-[280px] resize-y text-base leading-relaxed md:min-h-[320px]"
+          aria-label="Job description input"
+        />
+        <div className="absolute right-3 bottom-3 rounded-md bg-background/80 px-2 py-1 text-xs text-muted-foreground backdrop-blur-sm">
+          <span className={isOverLimit ? "text-destructive" : undefined}>
+            {characterCount.toLocaleString()}
+          </span>
+          <span> / {MAX_CHARACTERS.toLocaleString()}</span>
         </div>
-        {showError && (
-          <p className="text-sm text-destructive">
-            Enter a valid URL starting with http:// or https://
-          </p>
-        )}
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
         <Button
           onClick={handleExtract}
-          disabled={!isValid}
+          disabled={!value.trim() || isOverLimit}
           size="lg"
           className="gap-2"
         >

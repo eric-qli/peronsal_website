@@ -19,8 +19,9 @@ export interface Application {
 export interface RecentInput {
   id: string;
   title: string;
-  url: string;
-  submittedAt: string;
+  preview: string;
+  characterCount: number;
+  pastedAt: string;
 }
 
 export interface ApplicationStats {
