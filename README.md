@@ -73,7 +73,6 @@ Future Improvements
 
 This website will continue to evolve as I build new projects. Planned additions include:
 
-* AI-powered Job Application Tracker
 * Algorithmic Trading Platform
 * Real-Time Trading Simulator
 * Interactive project demos
@@ -85,13 +84,13 @@ This website will continue to evolve as I build new projects. Planned additions 
 
 About Me
 
-I’m a Computer Science graduate from the University of Toronto with interests in:
+I’m a Computer Science and Statistics student at the University of Toronto (expected Jun 2026) with interests in:
 
 * Software Engineering
 * Backend Development
 * Artificial Intelligence
-* Quantitative Finance
 * Data Engineering
+* Full-Stack Development
 
 I enjoy building practical software that combines clean system design with intuitive user experiences.
 

@@ -1,4 +1,4 @@
-import { DatabaseTestPanel } from "@/components/jobfind/database-test-panel";
+import { AiExtractionTestPanel } from "@/components/jobfind/ai-extraction-test-panel";
 
 export const dynamic = "force-dynamic";
 
@@ -8,24 +8,24 @@ export default function JobFindDbTestPage() {
       <header className="space-y-3">
         <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3">
           <p className="font-medium text-amber-200">
-            Development Database Testing Tool
+            Development AI Testing Tool
           </p>
           <p className="mt-1 text-sm text-muted-foreground">
-            Records created here are saved to the connected Supabase database.
+            This page tests OpenAI extraction only. Nothing is saved to Supabase.
           </p>
         </div>
         <div className="space-y-2">
           <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">
-            Database CRUD Test
+            AI Job Extraction Test
           </h1>
           <p className="max-w-2xl text-muted-foreground">
-            Create, read, update, and delete job application records through the
-            JobFind API routes.
+            Paste a job description, call OpenAI, and inspect the structured JSON
+            response.
           </p>
         </div>
       </header>
 
-      <DatabaseTestPanel />
+      <AiExtractionTestPanel />
     </div>
   );
 }

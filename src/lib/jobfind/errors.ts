@@ -6,7 +6,8 @@ export type ApiErrorCode =
   | "NOT_FOUND"
   | "DATABASE_ERROR"
   | "INVALID_JSON"
-  | "CONFIGURATION_ERROR";
+  | "CONFIGURATION_ERROR"
+  | "COVER_LETTER_GENERATION_FAILED";
 
 export interface ApiErrorBody {
   error: {
@@ -26,6 +27,23 @@ export function apiError(
     {
       error: {
         code,
+        message,
+        ...(fields ? { fields } : {}),
+      },
+    },
+    { status }
+  );
+}
+
+export function coverLetterError(
+  message: string,
+  status: number,
+  fields?: Record<string, string[]>
+) {
+  return NextResponse.json(
+    {
+      error: {
+        code: "COVER_LETTER_GENERATION_FAILED",
         message,
         ...(fields ? { fields } : {}),
       },

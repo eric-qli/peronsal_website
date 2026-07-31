@@ -97,6 +97,12 @@ export const updateJobApplicationSchema = createJobApplicationSchema
 
 export const applicationIdSchema = z.string().uuid("Invalid application ID.");
 
+export const coverLetterRequestSchema = z.object({
+  country: z.enum(["canada", "usa"]),
+});
+
+export type CoverLetterRequestPayload = z.infer<typeof coverLetterRequestSchema>;
+
 export type CreateJobApplicationPayload = z.infer<
   typeof createJobApplicationSchema
 >;

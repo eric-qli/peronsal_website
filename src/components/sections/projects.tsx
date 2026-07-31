@@ -10,7 +10,7 @@ export function Projects() {
         <SectionHeader
           label="Projects"
           title="Featured work"
-          description="Full-stack applications spanning AI, finance, and real-time systems."
+          description="Full-stack applications spanning AI, job search tooling, and community software."
         />
 
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">

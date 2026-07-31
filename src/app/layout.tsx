@@ -15,19 +15,22 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Eric Li — Software Engineer",
   description:
-    "BSc Computer Science and Statistics at the University of Toronto. Software engineer with experience in data engineering, backend development, and NLP.",
+    "Computer Science and Statistics student at the University of Toronto with experience in data engineering, full-stack development, and AI-powered application tooling.",
   keywords: [
     "Eric Li",
     "Software Engineer",
     "Computer Science",
+    "Statistics",
     "University of Toronto",
+    "Data Engineering",
+    "Full-Stack Development",
     "Portfolio",
   ],
   authors: [{ name: "Eric Li" }],
   openGraph: {
     title: "Eric Li — Software Engineer",
     description:
-      "Computer Science and Statistics student at the University of Toronto with experience in data engineering, backend development, and NLP.",
+      "Computer Science and Statistics student at the University of Toronto with experience in data engineering, full-stack development, and AI-powered application tooling.",
     type: "website",
   },
 };

@@ -1,3 +1,41 @@
+const PLACEHOLDER_VALUES = new Set([
+  "null",
+  "n/a",
+  "na",
+  "none",
+  "unknown",
+  "not specified",
+  "not available",
+]);
+
+export function normalizeOptionalText(value: string | null | undefined): string {
+  if (value === undefined || value === null) return "";
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  if (PLACEHOLDER_VALUES.has(trimmed.toLowerCase())) return "";
+  return trimmed;
+}
+
+export function linesInputToArray(value: string): string[] {
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+
+  for (const line of value.split(/\r?\n/)) {
+    for (const part of line.split(",")) {
+      const trimmed = part.trim();
+      if (!trimmed) continue;
+
+      const key = trimmed.toLowerCase();
+      if (seen.has(key)) continue;
+
+      seen.add(key);
+      normalized.push(trimmed);
+    }
+  }
+
+  return normalized;
+}
+
 export function getTodayDateString() {
   const now = new Date();
   const offset = now.getTimezoneOffset();

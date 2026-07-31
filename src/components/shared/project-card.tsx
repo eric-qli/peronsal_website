@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 
 interface ProjectCardProps {
   title: string;
+  period?: string;
   description: string;
   tags: string[];
   github: string;
@@ -19,6 +20,7 @@ interface ProjectCardProps {
 
 export function ProjectCard({
   title,
+  period,
   description,
   tags,
   github,
@@ -54,9 +56,16 @@ export function ProjectCard({
 
       <div className="flex flex-1 flex-col p-7 md:p-8">
         <div className="flex items-start justify-between gap-4">
-          <h3 className="text-2xl font-medium tracking-tight text-foreground transition-colors group-hover:text-indigo-300 md:text-[1.65rem]">
-            {title}
-          </h3>
+          <div>
+            <h3 className="text-2xl font-medium tracking-tight text-foreground transition-colors group-hover:text-indigo-300 md:text-[1.65rem]">
+              {title}
+            </h3>
+            {period ? (
+              <p className="mt-2 text-sm text-muted-foreground md:text-base">
+                {period}
+              </p>
+            ) : null}
+          </div>
           <ArrowUpRight className="size-6 shrink-0 text-muted-foreground opacity-0 transition-all duration-300 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-indigo-300 group-hover:opacity-100" />
         </div>
 

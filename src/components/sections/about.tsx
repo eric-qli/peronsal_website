@@ -1,6 +1,6 @@
 import { AnimatedSection } from "@/components/shared/animated-section";
 import { SectionHeader } from "@/components/shared/section-header";
-import { aboutContent } from "@/lib/data";
+import { aboutContent, educationContent } from "@/lib/data";
 
 export function About() {
   return (
@@ -10,6 +10,21 @@ export function About() {
         <p className="max-w-3xl text-lg leading-relaxed text-muted-foreground md:text-xl md:leading-relaxed">
           {aboutContent.paragraph}
         </p>
+        <div className="mt-8 max-w-3xl space-y-2 text-base text-muted-foreground md:text-lg">
+          <p>
+            <span className="font-medium text-foreground">
+              {educationContent.degree}
+            </span>
+            {" · "}
+            {educationContent.school}
+          </p>
+          <p>
+            {educationContent.period} · {educationContent.location}
+          </p>
+          <p>
+            Relevant coursework: {educationContent.coursework.join(", ")}
+          </p>
+        </div>
       </div>
     </AnimatedSection>
   );

@@ -2,12 +2,25 @@ import {
   type ApiErrorBody,
   type ApiErrorCode,
 } from "@/lib/jobfind/errors";
+import { type ExtractedJob } from "@/lib/jobfind/extracted-job";
 import {
   type CreateJobApplicationInput,
   type JobApplication,
   type SortOption,
   type UpdateJobApplicationInput,
 } from "@/lib/jobfind/types";
+
+export interface JobExtractionMeta {
+  processingTimeMs: number;
+  inputTokens: number;
+  outputTokens: number;
+  model: string;
+}
+
+export interface JobExtractionResponse {
+  data: ExtractedJob;
+  meta: JobExtractionMeta;
+}
 
 export class JobFindApiError extends Error {
   code: ApiErrorCode;
@@ -76,7 +89,8 @@ export async function getApplications(
 
   const query = searchParams.toString();
   const response = await fetch(
-    `/api/jobfind/applications${query ? `?${query}` : ""}`
+    `/api/jobfind/applications${query ? `?${query}` : ""}`,
+    { cache: "no-store" }
   );
 
   const payload = await parseResponse<{ data: JobApplication[] }>(response);
@@ -84,7 +98,9 @@ export async function getApplications(
 }
 
 export async function getApplication(id: string): Promise<JobApplication> {
-  const response = await fetch(`/api/jobfind/applications/${id}`);
+  const response = await fetch(`/api/jobfind/applications/${id}`, {
+    cache: "no-store",
+  });
   const payload = await parseResponse<{ data: JobApplication }>(response);
   return payload.data;
 }
@@ -96,6 +112,7 @@ export async function createApplication(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
+    cache: "no-store",
   });
 
   const payload = await parseResponse<{ data: JobApplication }>(response);
@@ -110,6 +127,7 @@ export async function updateApplication(
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
+    cache: "no-store",
   });
 
   const payload = await parseResponse<{ data: JobApplication }>(response);
@@ -119,7 +137,21 @@ export async function updateApplication(
 export async function deleteApplication(id: string): Promise<void> {
   const response = await fetch(`/api/jobfind/applications/${id}`, {
     method: "DELETE",
+    cache: "no-store",
   });
 
   await parseResponse<{ success: true }>(response);
+}
+
+export async function extractJobDescription(
+  jobDescription: string
+): Promise<JobExtractionResponse> {
+  const response = await fetch("/api/jobfind/extract", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ jobDescription }),
+    cache: "no-store",
+  });
+
+  return parseResponse<JobExtractionResponse>(response);
 }

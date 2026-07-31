@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { motion } from "framer-motion";
 import { Mail, Phone } from "lucide-react";
 import { GitHubIcon, LinkedInIcon } from "@/components/icons/social-icons";
@@ -94,7 +93,7 @@ export function Contact() {
 
         <div className="mt-14 flex justify-center">
           <Button
-            render={<Link href={`mailto:${siteConfig.email}`} />}
+            render={<a href={`mailto:${siteConfig.email}`} />}
             size="lg"
             className="h-12 px-8 text-base"
           >

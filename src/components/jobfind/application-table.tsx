@@ -1,8 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { motion } from "framer-motion";
 import {
+  ArrowUpRight,
   ExternalLink,
   Loader2,
   Pencil,
@@ -12,7 +14,6 @@ import {
 import { ApplicationEditDialog } from "@/components/jobfind/application-edit-dialog";
 import { DeleteApplicationDialog } from "@/components/jobfind/delete-application-dialog";
 import { StatusSelect } from "@/components/jobfind/status-select";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -45,6 +46,7 @@ import {
   type SortOption,
   type StatusFilter,
 } from "@/lib/jobfind/types";
+import { getNotesPreview } from "@/lib/jobfind/notes-parser";
 import { formatDisplayDate } from "@/lib/jobfind/utils";
 
 interface ApplicationTableProps {
@@ -63,6 +65,9 @@ export function ApplicationTable({
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [statusFeedback, setStatusFeedback] = useState<
+    Record<string, { type: "success" | "error"; message: string }>
+  >({});
   const [deleteTarget, setDeleteTarget] = useState<JobApplication | null>(null);
   const [editTarget, setEditTarget] = useState<JobApplication | null>(null);
 
@@ -102,19 +107,41 @@ export function ApplicationTable({
   ) {
     if (application.status === status || updatingId) return;
 
+    const previousStatus = application.status;
     setUpdatingId(application.id);
     setError(null);
+    setApplications((current) =>
+      current.map((app) =>
+        app.id === application.id ? { ...app, status } : app
+      )
+    );
 
     try {
       await updateApplication(application.id, { status });
-      await loadApplications();
       onMutation?.();
+      setStatusFeedback((current) => ({
+        ...current,
+        [application.id]: {
+          type: "success",
+          message: "Status updated.",
+        },
+      }));
     } catch (err) {
-      setError(
-        err instanceof JobFindApiError
-          ? err.message
-          : "Failed to update application status."
+      setApplications((current) =>
+        current.map((app) =>
+          app.id === application.id ? { ...app, status: previousStatus } : app
+        )
       );
+      setStatusFeedback((current) => ({
+        ...current,
+        [application.id]: {
+          type: "error",
+          message:
+            err instanceof JobFindApiError
+              ? err.message
+              : "Failed to update application status.",
+        },
+      }));
     } finally {
       setUpdatingId(null);
     }
@@ -208,10 +235,9 @@ export function ApplicationTable({
                 <TableHead className="hidden md:table-cell">Location</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="hidden sm:table-cell">Date Applied</TableHead>
-                <TableHead className="hidden lg:table-cell">Required Skills</TableHead>
-                <TableHead className="hidden xl:table-cell">Source URL</TableHead>
-                <TableHead className="hidden 2xl:table-cell">Notes</TableHead>
-                <TableHead className="w-[96px]">Actions</TableHead>
+                <TableHead className="hidden lg:table-cell">Source URL</TableHead>
+                <TableHead className="hidden xl:table-cell">Notes</TableHead>
+                <TableHead className="w-[140px]">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -227,45 +253,63 @@ export function ApplicationTable({
               ) : (
                 applications.map((app) => (
                   <TableRow key={app.id}>
-                    <TableCell className="font-medium">{app.company}</TableCell>
+                    <TableCell className="font-medium">
+                      <Link
+                        href={`/jobfind/applications/${app.id}`}
+                        className="text-foreground hover:text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                      >
+                        {app.company}
+                      </Link>
+                    </TableCell>
                     <TableCell className="max-w-[180px] truncate text-muted-foreground">
-                      {app.position}
+                      <Link
+                        href={`/jobfind/applications/${app.id}`}
+                        className="block truncate hover:text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                      >
+                        {app.position}
+                      </Link>
                     </TableCell>
                     <TableCell className="hidden text-muted-foreground md:table-cell">
                       {app.location ?? "—"}
                     </TableCell>
                     <TableCell>
-                      <StatusSelect
-                        value={app.status}
-                        onValueChange={(status) =>
-                          void handleStatusChange(app, status)
-                        }
-                        disabled={updatingId === app.id}
-                      />
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <StatusSelect
+                            value={app.status}
+                            onValueChange={(status) =>
+                              void handleStatusChange(app, status)
+                            }
+                            disabled={updatingId === app.id}
+                          />
+                          {updatingId === app.id && (
+                            <Loader2 className="size-4 animate-spin text-muted-foreground" />
+                          )}
+                        </div>
+                        {statusFeedback[app.id] && (
+                          <p
+                            className={
+                              statusFeedback[app.id].type === "success"
+                                ? "text-xs text-emerald-300"
+                                : "text-xs text-destructive"
+                            }
+                          >
+                            {statusFeedback[app.id].message}
+                          </p>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell className="hidden text-muted-foreground sm:table-cell">
                       {formatDisplayDate(app.dateApplied)}
                     </TableCell>
                     <TableCell className="hidden lg:table-cell">
-                      <div className="flex max-w-[220px] flex-wrap gap-1">
-                        {app.requiredSkills.length > 0 ? (
-                          app.requiredSkills.map((skill) => (
-                            <Badge key={skill} variant="outline" className="text-xs">
-                              {skill}
-                            </Badge>
-                          ))
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell className="hidden xl:table-cell">
                       {app.sourceUrl ? (
                         <a
                           href={app.sourceUrl}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="inline-flex max-w-[220px] items-center gap-1 truncate text-sm text-accent hover:underline"
+                          onClick={(event) => event.stopPropagation()}
                         >
                           <ExternalLink className="size-3 shrink-0" />
                           {app.sourceUrl.replace(/^https?:\/\//, "")}
@@ -274,11 +318,34 @@ export function ApplicationTable({
                         <span className="text-muted-foreground">—</span>
                       )}
                     </TableCell>
-                    <TableCell className="hidden max-w-[220px] truncate text-muted-foreground 2xl:table-cell">
-                      {app.notes ?? "—"}
+                    <TableCell className="hidden max-w-[220px] truncate text-muted-foreground xl:table-cell">
+                      {getNotesPreview(app.notes) ?? "—"}
                     </TableCell>
                     <TableCell>
-                      <div className="flex items-center gap-1">
+                      <div className="flex flex-wrap items-center gap-1">
+                        <Button
+                          variant="outline"
+                          size="xs"
+                          className="hidden sm:inline-flex"
+                          render={
+                            <Link href={`/jobfind/applications/${app.id}`} />
+                          }
+                        >
+                          View Details
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          className="sm:hidden"
+                          render={
+                            <Link
+                              href={`/jobfind/applications/${app.id}`}
+                              aria-label={`View details for ${app.company}`}
+                            />
+                          }
+                        >
+                          <ArrowUpRight className="size-4 text-muted-foreground" />
+                        </Button>
                         <Button
                           variant="ghost"
                           size="icon-sm"
