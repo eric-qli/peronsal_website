@@ -19,7 +19,9 @@ export async function renderCoverLetterPdf(
   input: RenderCoverLetterPdfInput
 ): Promise<Buffer> {
   const resume = getResumeContent();
-  const contactLine = `${resume.email} | linkedin.com/in/eric-li-eqli | ericqli.ca`;
+  const linkedinLabel = resume.linkedin.replace(/^https?:\/\//, "");
+  const websiteLabel = resume.website.replace(/^https?:\/\//, "");
+  const contactLine = `${resume.email} | ${linkedinLabel} | ${websiteLabel}`;
 
   const buffer = await renderToBuffer(
     <CoverLetterDocument

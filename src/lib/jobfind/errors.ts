@@ -69,3 +69,11 @@ export function isConfigurationError(error: unknown): boolean {
     error.message.includes("Missing required environment variable")
   );
 }
+
+export function logConfigurationError(error: unknown, context: string): void {
+  if (error instanceof Error) {
+    console.error(`[jobfind] ${context}:`, error.message);
+  } else {
+    console.error(`[jobfind] ${context}:`, error);
+  }
+}

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   apiError,
   isConfigurationError,
+  logConfigurationError,
   zodFields,
 } from "@/lib/jobfind/errors";
 import {
@@ -36,6 +37,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     return NextResponse.json({ data });
   } catch (error) {
     if (isConfigurationError(error)) {
+      logConfigurationError(error, "GET /applications/[id] configuration");
       return apiError(
         "CONFIGURATION_ERROR",
         "Server configuration error.",
@@ -86,6 +88,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     }
 
     if (isConfigurationError(error)) {
+      logConfigurationError(error, "PATCH /applications/[id] configuration");
       return apiError(
         "CONFIGURATION_ERROR",
         "Server configuration error.",
@@ -120,6 +123,7 @@ export async function DELETE(_request: NextRequest, context: RouteContext) {
     return NextResponse.json({ success: true });
   } catch (error) {
     if (isConfigurationError(error)) {
+      logConfigurationError(error, "DELETE /applications/[id] configuration");
       return apiError(
         "CONFIGURATION_ERROR",
         "Server configuration error.",

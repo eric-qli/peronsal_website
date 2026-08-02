@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   apiError,
   isConfigurationError,
+  logConfigurationError,
   zodFields,
 } from "@/lib/jobfind/errors";
 import {
@@ -24,6 +25,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ data });
   } catch (error) {
     if (isConfigurationError(error)) {
+      logConfigurationError(error, "GET /applications configuration");
       return apiError(
         "CONFIGURATION_ERROR",
         "Server configuration error.",
@@ -62,6 +64,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (isConfigurationError(error)) {
+      logConfigurationError(error, "POST /applications configuration");
       return apiError(
         "CONFIGURATION_ERROR",
         "Server configuration error.",

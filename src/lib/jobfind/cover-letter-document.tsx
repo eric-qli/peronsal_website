@@ -16,37 +16,37 @@ const styles = StyleSheet.create({
     paddingHorizontal: MARGIN,
     fontSize: 11,
     fontFamily: "Helvetica",
-    lineHeight: 1.45,
+    lineHeight: 1.35,
     color: "#000000",
     backgroundColor: "#ffffff",
   },
   headerName: {
-    fontSize: 12,
+    fontSize: 11.5,
     fontFamily: "Helvetica-Bold",
-    marginBottom: 4,
+    marginBottom: 3,
   },
   contactLine: {
     fontSize: 10.5,
-    marginBottom: 18,
-  },
-  metaLine: {
-    marginBottom: 4,
-  },
-  subjectLine: {
-    fontFamily: "Helvetica-Bold",
-    marginTop: 12,
     marginBottom: 14,
   },
+  metaBlock: {
+    marginBottom: 14,
+  },
+  metaLine: {
+    marginBottom: 2,
+  },
   salutation: {
-    marginBottom: 12,
+    marginBottom: 10,
   },
   paragraph: {
-    marginBottom: 12,
-    textAlign: "justify",
+    marginBottom: 10,
+    textAlign: "left",
+  },
+  signOffBlock: {
+    marginTop: 4,
   },
   signOff: {
-    marginTop: 8,
-    marginBottom: 24,
+    marginBottom: 18,
   },
 });
 
@@ -72,22 +72,21 @@ export function CoverLetterDocument({
   return (
     <Document
       title={`${company} - ${position} - Cover Letter`}
-      author="Eric Li"
+      author={applicantName}
       subject={`Cover Letter for ${position} at ${company}`}
       creator="JobFind"
     >
-      <Page size="LETTER" style={styles.page}>
+      <Page size="LETTER" style={styles.page} wrap={false}>
         <Text style={styles.headerName}>{applicantName}</Text>
         <Text style={styles.contactLine}>{contactLine}</Text>
 
-        <View>
+        <View style={styles.metaBlock}>
           <Text style={styles.metaLine}>{dateLabel}</Text>
           <Text style={styles.metaLine}>{company}</Text>
           <Text style={styles.metaLine}>{position}</Text>
           {location ? <Text style={styles.metaLine}>{location}</Text> : null}
         </View>
 
-        <Text style={styles.subjectLine}>{letter.subjectLine}</Text>
         <Text style={styles.salutation}>{letter.salutation}</Text>
 
         {letter.paragraphs.map((paragraph, index) => (
@@ -96,8 +95,10 @@ export function CoverLetterDocument({
           </Text>
         ))}
 
-        <Text style={styles.signOff}>{letter.signOff}</Text>
-        <Text>{letter.applicantName}</Text>
+        <View style={styles.signOffBlock}>
+          <Text style={styles.signOff}>{letter.signOff}</Text>
+          <Text>{letter.applicantName}</Text>
+        </View>
       </Page>
     </Document>
   );

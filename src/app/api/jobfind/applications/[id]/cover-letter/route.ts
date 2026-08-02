@@ -12,6 +12,7 @@ import {
   apiError,
   coverLetterError,
   isConfigurationError,
+  logConfigurationError,
   zodFields,
 } from "@/lib/jobfind/errors";
 import { getApplicationById } from "@/lib/jobfind/queries";
@@ -90,16 +91,39 @@ export async function POST(request: NextRequest, context: RouteContext) {
       country,
     });
 
-    const generation = await generateCoverLetter({
+    let generation = await generateCoverLetter({
       application: jobContext,
       country,
     });
 
-    const validated = validateGeneratedCoverLetter(generation.data, {
-      company: jobContext.company,
-      position: jobContext.position,
-      country,
-    });
+    let validated;
+
+    try {
+      validated = validateGeneratedCoverLetter(generation.data, {
+        company: jobContext.company,
+        position: jobContext.position,
+        country,
+      });
+    } catch (firstValidationError) {
+      if (!(firstValidationError instanceof CoverLetterValidationError)) {
+        throw firstValidationError;
+      }
+
+      console.warn("[cover-letter] validation failed, retrying generation", {
+        message: firstValidationError.message,
+      });
+
+      generation = await generateCoverLetter({
+        application: jobContext,
+        country,
+      });
+
+      validated = validateGeneratedCoverLetter(generation.data, {
+        company: jobContext.company,
+        position: jobContext.position,
+        country,
+      });
+    }
 
     const assembled = assembleCoverLetter(validated, country);
     validateAssembledCoverLetter(assembled, country);
@@ -157,6 +181,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     }
 
     if (isConfigurationError(error)) {
+      logConfigurationError(error, "POST /applications/[id]/cover-letter configuration");
       return apiError(
         "CONFIGURATION_ERROR",
         "Server configuration error.",

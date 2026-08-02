@@ -1,6 +1,7 @@
 import "server-only";
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { logSupabaseEnvDiagnostics } from "@/lib/supabase/env-diagnostics";
 
 let serverClient: SupabaseClient | null = null;
 
@@ -8,6 +9,7 @@ function getPublicSupabaseUrl(): string {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
 
   if (!url) {
+    logSupabaseEnvDiagnostics("missing NEXT_PUBLIC_SUPABASE_URL");
     throw new Error(
       "Missing required environment variable: NEXT_PUBLIC_SUPABASE_URL"
     );
@@ -22,6 +24,9 @@ function getSecretKey(): string {
   const key = secretKey || serviceRoleKey;
 
   if (!key) {
+    logSupabaseEnvDiagnostics(
+      "missing SUPABASE_SECRET_KEY and SUPABASE_SERVICE_ROLE_KEY"
+    );
     throw new Error(
       "Missing required environment variable: SUPABASE_SECRET_KEY (or SUPABASE_SERVICE_ROLE_KEY)"
     );
