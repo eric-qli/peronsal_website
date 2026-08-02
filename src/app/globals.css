@@ -183,4 +183,81 @@
     background-clip: text;
     color: transparent;
   }
+
+  .glass-panel {
+    background: oklch(0.22 0.04 270 / 72%);
+    backdrop-filter: blur(16px);
+    border: 1px solid oklch(0.55 0.08 270 / 18%);
+  }
+
+  .glass-panel-strong {
+    background: oklch(0.24 0.05 275 / 88%);
+    backdrop-filter: blur(20px);
+    border: 1px solid oklch(0.55 0.08 270 / 22%);
+  }
+
+  @keyframes aurora-drift {
+    0%,
+    100% {
+      transform: translate(0, 0) scale(1);
+    }
+    50% {
+      transform: translate(4%, 3%) scale(1.05);
+    }
+  }
+
+  @keyframes aurora-drift-reverse {
+    0%,
+    100% {
+      transform: translate(0, 0) scale(1);
+    }
+    50% {
+      transform: translate(-3%, 2%) scale(1.04);
+    }
+  }
+
+  @keyframes aurora-float {
+    0%,
+    100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-3%);
+    }
+  }
+
+  @keyframes gradient-border {
+    0%,
+    100% {
+      filter: hue-rotate(0deg);
+    }
+    50% {
+      filter: hue-rotate(18deg);
+    }
+  }
+
+  .animate-aurora-drift {
+    animation: aurora-drift 14s ease-in-out infinite;
+  }
+
+  .animate-aurora-drift-reverse {
+    animation: aurora-drift-reverse 16s ease-in-out infinite;
+  }
+
+  .animate-aurora-float {
+    animation: aurora-float 12s ease-in-out infinite;
+  }
+
+  .animate-gradient-border {
+    animation: gradient-border 8s ease-in-out infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .animate-aurora-drift,
+    .animate-aurora-drift-reverse,
+    .animate-aurora-float,
+    .animate-gradient-border {
+      animation: none;
+    }
+  }
 }

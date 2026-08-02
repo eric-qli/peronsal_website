@@ -3,8 +3,11 @@
 import { motion } from "framer-motion";
 import { ArrowUpRight } from "lucide-react";
 import { GitHubIcon } from "@/components/icons/social-icons";
+import { SpotlightCard } from "@/components/reactbits/spotlight-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DURATION, EASE } from "@/lib/animation";
+import { useReducedMotion } from "@/hooks/use-reduced-motion";
 import { cn } from "@/lib/utils";
 
 interface ProjectCardProps {
@@ -28,18 +31,10 @@ export function ProjectCard({
   gradient,
   index,
 }: ProjectCardProps) {
-  return (
-    <motion.article
-      initial={{ opacity: 0, y: 24 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, margin: "-60px" }}
-      transition={{
-        duration: 0.5,
-        delay: index * 0.1,
-        ease: [0.21, 0.47, 0.32, 0.98],
-      }}
-      className="group relative flex flex-col overflow-hidden rounded-2xl border border-border/60 bg-card/70 transition-all duration-300 hover:border-primary/40 hover:shadow-[0_0_50px_-12px_rgba(99,102,241,0.4)]"
-    >
+  const reducedMotion = useReducedMotion();
+
+  const card = (
+    <SpotlightCard className="flex h-full flex-col">
       <div
         className={cn(
           "relative h-48 overflow-hidden bg-gradient-to-br md:h-52",
@@ -54,7 +49,7 @@ export function ProjectCard({
         </div>
       </div>
 
-      <div className="flex flex-1 flex-col p-7 md:p-8">
+      <div className="relative flex flex-1 flex-col p-7 md:p-8">
         <div className="flex items-start justify-between gap-4">
           <div>
             <h3 className="text-2xl font-medium tracking-tight text-foreground transition-colors group-hover:text-indigo-300 md:text-[1.65rem]">
@@ -78,7 +73,7 @@ export function ProjectCard({
             <Badge
               key={tag}
               variant="secondary"
-              className="border border-white/10 bg-white/5 px-3 py-1 text-sm font-normal md:text-base"
+              className="border border-white/10 bg-white/5 px-3 py-1 text-sm font-normal transition-transform duration-200 hover:scale-[1.03] md:text-base"
             >
               {tag}
             </Badge>
@@ -108,6 +103,26 @@ export function ProjectCard({
           />
         </div>
       </div>
+    </SpotlightCard>
+  );
+
+  if (reducedMotion) {
+    return <article className="h-full">{card}</article>;
+  }
+
+  return (
+    <motion.article
+      initial={{ opacity: 0, y: 24 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, margin: "-60px" }}
+      transition={{
+        duration: DURATION.normal,
+        delay: index * 0.1,
+        ease: EASE,
+      }}
+      className="group h-full"
+    >
+      {card}
     </motion.article>
   );
 }

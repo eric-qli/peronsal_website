@@ -1,16 +1,9 @@
 "use client";
 
 import { motion, type Variants } from "framer-motion";
+import { fadeUpVariants, STAGGER, VIEWPORT } from "@/lib/animation";
+import { useReducedMotion } from "@/hooks/use-reduced-motion";
 import { cn } from "@/lib/utils";
-
-const fadeUpVariants: Variants = {
-  hidden: { opacity: 0, y: 24 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    transition: { duration: 0.5, ease: [0.21, 0.47, 0.32, 0.98] },
-  },
-};
 
 interface AnimatedSectionProps {
   children: React.ReactNode;
@@ -25,12 +18,22 @@ export function AnimatedSection({
   id,
   delay = 0,
 }: AnimatedSectionProps) {
+  const reducedMotion = useReducedMotion();
+
+  if (reducedMotion) {
+    return (
+      <section id={id} className={cn("scroll-mt-28", className)}>
+        {children}
+      </section>
+    );
+  }
+
   return (
     <motion.section
       id={id}
       initial="hidden"
       whileInView="visible"
-      viewport={{ once: true, margin: "-80px" }}
+      viewport={VIEWPORT}
       variants={{
         hidden: fadeUpVariants.hidden,
         visible: {
@@ -41,7 +44,7 @@ export function AnimatedSection({
           },
         },
       }}
-      className={cn("scroll-mt-24", className)}
+      className={cn("scroll-mt-28", className)}
     >
       {children}
     </motion.section>
@@ -57,8 +60,14 @@ interface StaggerContainerProps {
 export function StaggerContainer({
   children,
   className,
-  stagger = 0.1,
+  stagger = STAGGER.normal,
 }: StaggerContainerProps) {
+  const reducedMotion = useReducedMotion();
+
+  if (reducedMotion) {
+    return <div className={className}>{children}</div>;
+  }
+
   return (
     <motion.div
       initial="hidden"
@@ -84,8 +93,14 @@ export function StaggerItem({
   children: React.ReactNode;
   className?: string;
 }) {
+  const reducedMotion = useReducedMotion();
+
+  if (reducedMotion) {
+    return <div className={className}>{children}</div>;
+  }
+
   return (
-    <motion.div variants={fadeUpVariants} className={className}>
+    <motion.div variants={fadeUpVariants as Variants} className={className}>
       {children}
     </motion.div>
   );

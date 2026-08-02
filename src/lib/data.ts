@@ -6,8 +6,8 @@ export const siteConfig = {
   email: "ericqi.li@mail.utoronto.ca",
   phone: "778-929-1402",
   links: {
-    github: "https://github.com/ericli",
-    linkedin: "https://linkedin.com/in/ericli",
+    github: "https://github.com/eric-qli",
+    linkedin: "https://www.linkedin.com/in/eric-li-eqli/",
     resume: "/resume.pdf",
   },
 };
@@ -62,7 +62,7 @@ export const projects = [
       "OpenAI API",
       "Vercel",
     ],
-    github: "https://github.com/ericli",
+    github: "https://github.com/eric-qli",
     demo: "https://ericqli.ca",
     gradient: "from-cyan-500/60 via-blue-600/40 to-indigo-600/30",
   },
@@ -115,5 +115,6 @@ export const navLinks = [
   { label: "Experience", href: "#experience" },
   { label: "Projects", href: "#projects" },
   { label: "Skills", href: "#skills" },
+  { label: "JobFind", href: "/jobfind/input" },
   { label: "Contact", href: "#contact" },
 ];
