@@ -67,6 +67,16 @@ export const projects = [
     gradient: "from-cyan-500/60 via-blue-600/40 to-indigo-600/30",
   },
   {
+    title: "Mini Operating System Kernel",
+    period: "Feb 2026 – Present",
+    description:
+      "Implemented a Unix-inspired process management kernel in C, including fork, exec, wait, system call handling, process control blocks (PCBs), and cooperative context switching on an emulated x86-64 CPU.",
+    tags: ["C", "CMake", "Unicorn Engine"],
+    github: "https://github.com/eric-qli/mini-os",
+    demo: "https://github.com/eric-qli/mini-os",
+    gradient: "from-emerald-500/60 via-teal-600/40 to-cyan-600/30",
+  },
+  {
     title: "Scriptorium Code Template Manager",
     period: "Jan 2026 – April 2026",
     description:
@@ -116,5 +126,6 @@ export const navLinks = [
   { label: "Projects", href: "#projects" },
   { label: "Skills", href: "#skills" },
   { label: "JobFind", href: "/jobfind/input" },
+  { label: "Flights", href: "/flights" },
   { label: "Contact", href: "#contact" },
 ];

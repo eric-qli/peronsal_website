@@ -24,7 +24,11 @@ function isNavLinkActive(
     return activeSection === href.slice(1);
   }
 
-  return pathname.startsWith("/jobfind");
+  if (href.startsWith("/")) {
+    return pathname === href || pathname.startsWith(`${href}/`);
+  }
+
+  return false;
 }
 
 export function Navbar() {
