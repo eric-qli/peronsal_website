@@ -164,35 +164,219 @@ export function computeFlightGeoBounds(
   };
 }
 
-function boundsToFitFeature(
-  coordinates: Array<[number, number]>,
-  centerLng: number
-) {
+function sanitizeCoordinates(
+  coordinates: Array<[number, number]>
+): Array<[number, number]> {
+  return coordinates.filter(
+    ([lng, lat]) =>
+      Number.isFinite(lng) &&
+      Number.isFinite(lat) &&
+      lat >= -90 &&
+      lat <= 90 &&
+      lng >= -180 &&
+      lng <= 180
+  );
+}
+
+/** Minimum drawable area inside padding; prevents invalid fit boxes. */
+const MIN_FIT_EXTENT_PX = 96;
+
+export function normalizeMapPadding(
+  dimensions: MapDimensions,
+  padding: MapPadding
+): MapPadding {
+  const { width, height } = dimensions;
+  const maxVerticalPadding = Math.max(
+    MIN_FIT_EXTENT_PX,
+    (height - MIN_FIT_EXTENT_PX) / 2
+  );
+  const maxHorizontalPadding = Math.max(
+    MIN_FIT_EXTENT_PX,
+    (width - MIN_FIT_EXTENT_PX) / 2
+  );
+
   return {
-    type: "Feature" as const,
-    properties: {},
-    geometry: {
-      type: "MultiPoint" as const,
-      coordinates: coordinates.map(([lng, lat]) => [
-        normalizeLongitudeRelativeToCenter(lng, centerLng),
-        lat,
-      ]),
-    },
+    top: Math.min(padding.top, maxVerticalPadding),
+    right: Math.min(padding.right, maxHorizontalPadding),
+    bottom: Math.min(padding.bottom, maxVerticalPadding),
+    left: Math.min(padding.left, maxHorizontalPadding),
   };
 }
 
-function normalizeLongitudeRelativeToCenter(
-  lng: number,
-  centerLng: number
-): number {
+export function buildFitExtent(
+  dimensions: MapDimensions,
+  padding: MapPadding
+): [[number, number], [number, number]] {
+  const normalized = normalizeMapPadding(dimensions, padding);
+  const x1 = Math.max(
+    normalized.left + MIN_FIT_EXTENT_PX,
+    dimensions.width - normalized.right
+  );
+  const y1 = Math.max(
+    normalized.top + MIN_FIT_EXTENT_PX,
+    dimensions.height - normalized.bottom
+  );
+
+  return [
+    [normalized.left, normalized.top],
+    [x1, y1],
+  ];
+}
+
+export function isProjectionValid(projection: GeoProjection): boolean {
+  const scale = projection.scale();
+  const translate = projection.translate();
+
+  if (!Number.isFinite(scale) || scale <= 0) return false;
+  if (!Number.isFinite(translate[0]) || !Number.isFinite(translate[1])) {
+    return false;
+  }
+
+  for (const coordinates of [
+    [0, 0],
+    [100, 35],
+    [-120, 49],
+  ] as Array<[number, number]>) {
+    const projected = projection(coordinates);
+    if (
+      !projected ||
+      !Number.isFinite(projected[0]) ||
+      !Number.isFinite(projected[1])
+    ) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function createBaseProjection(): GeoProjection {
+  return geoNaturalEarth1();
+}
+
+function projectCoordinateBounds(
+  coordinates: Array<[number, number]>,
+  projection: GeoProjection
+): { minX: number; minY: number; maxX: number; maxY: number } | null {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  let count = 0;
+
+  for (const [lng, lat] of coordinates) {
+    const point = projection([lng, lat]);
+    if (
+      !point ||
+      !Number.isFinite(point[0]) ||
+      !Number.isFinite(point[1])
+    ) {
+      continue;
+    }
+
+    minX = Math.min(minX, point[0]);
+    maxX = Math.max(maxX, point[0]);
+    minY = Math.min(minY, point[1]);
+    maxY = Math.max(maxY, point[1]);
+    count += 1;
+  }
+
+  if (count === 0) return null;
+
+  return { minX, minY, maxX, maxY };
+}
+
+function unwrapLongitudeForCenter(lng: number, centerLng: number): number {
   let adjusted = lng;
   while (adjusted - centerLng > 180) adjusted -= 360;
   while (adjusted - centerLng < -180) adjusted += 360;
   return adjusted;
 }
 
-function createBaseProjection(): GeoProjection {
-  return geoNaturalEarth1();
+/**
+ * Fit projection without d3 fitExtent (avoids point[0] crashes in geoStream).
+ * Uses rotate([-lng, 0]) so Pacific-centered clusters stay continuous instead of
+ * wrapping across the Atlantic / Europe.
+ */
+function fitProjectionToCoordinates(
+  coordinates: Array<[number, number]>,
+  dimensions: MapDimensions,
+  padding: MapPadding,
+  center: [number, number]
+): GeoProjection {
+  const extent = buildFitExtent(dimensions, padding);
+  const extentCenterX = (extent[0][0] + extent[1][0]) / 2;
+  const extentCenterY = (extent[0][1] + extent[1][1]) / 2;
+  const [centerLng, centerLat] = center;
+
+  // Keep fitting points in a continuous longitude frame around the travel region.
+  const unwrappedCoordinates = coordinates.map(
+    ([lng, lat]) =>
+      [unwrapLongitudeForCenter(lng, centerLng), lat] as [number, number]
+  );
+
+  const projection = createBaseProjection();
+  // Rotate the globe so the travel region's center is in the middle of the map.
+  projection.rotate([-centerLng, -centerLat * 0.35, 0]);
+  projection.center([0, 0]);
+
+  let lo = 40;
+  let hi = 12000;
+  let bestScale = 150;
+
+  for (let iteration = 0; iteration < 32; iteration += 1) {
+    const scale = (lo + hi) / 2;
+    projection.scale(scale);
+    projection.translate([extentCenterX, extentCenterY]);
+
+    const bounds = projectCoordinateBounds(unwrappedCoordinates, projection);
+    if (!bounds) {
+      hi = scale;
+      continue;
+    }
+
+    const width = bounds.maxX - bounds.minX;
+    const height = bounds.maxY - bounds.minY;
+    const extentWidth = extent[1][0] - extent[0][0];
+    const extentHeight = extent[1][1] - extent[0][1];
+    const fits = width <= extentWidth && height <= extentHeight;
+
+    if (fits) {
+      bestScale = scale;
+      lo = scale;
+    } else {
+      hi = scale;
+    }
+  }
+
+  projection.scale(bestScale * 0.9);
+  projection.translate([extentCenterX, extentCenterY]);
+
+  const bounds = projectCoordinateBounds(unwrappedCoordinates, projection);
+  if (bounds) {
+    const [translateX, translateY] = projection.translate();
+    projection.translate([
+      translateX + extentCenterX - (bounds.minX + bounds.maxX) / 2,
+      translateY + extentCenterY - (bounds.minY + bounds.maxY) / 2,
+    ]);
+  }
+
+  return projection;
+}
+
+function createWorldProjectionManual(
+  dimensions: MapDimensions,
+  padding: MapPadding
+): GeoProjection {
+  const extent = buildFitExtent(dimensions, padding);
+  const centerX = (extent[0][0] + extent[1][0]) / 2;
+  const centerY = (extent[0][1] + extent[1][1]) / 2;
+  const extentWidth = extent[1][0] - extent[0][0];
+
+  return createBaseProjection()
+    .center([0, 10])
+    .scale(extentWidth * 0.21)
+    .translate([centerX, centerY]);
 }
 
 /** Clone projection transform state for animation/interpolation. */
@@ -211,25 +395,17 @@ export function createWorldProjection(
   dimensions: MapDimensions,
   padding: MapPadding = DEFAULT_PADDING
 ): GeoProjection {
-  const projection = createBaseProjection();
-  const { width, height } = dimensions;
-
-  if (width <= 0 || height <= 0) {
-    return projection;
+  if (dimensions.width <= 0 || dimensions.height <= 0) {
+    return createBaseProjection();
   }
 
-  projection.fitExtent(
-    [
-      [padding.left, padding.top],
-      [
-        Math.max(padding.left + 1, width - padding.right),
-        Math.max(padding.top + 1, height - padding.bottom),
-      ],
-    ],
-    { type: "Sphere" }
-  );
-
-  return projection;
+  const projection = createWorldProjectionManual(dimensions, padding);
+  return isProjectionValid(projection)
+    ? projection
+    : createBaseProjection().translate([
+        dimensions.width / 2,
+        dimensions.height / 2,
+      ]);
 }
 
 /** Fit projection to the actual travel region for the given flights. */
@@ -238,44 +414,34 @@ export function createFlightMapProjection(
   dimensions: MapDimensions,
   padding: MapPadding = DEFAULT_PADDING
 ): GeoProjection {
-  const { width, height } = dimensions;
-
-  if (width <= 0 || height <= 0) {
+  if (dimensions.width <= 0 || dimensions.height <= 0) {
     return createBaseProjection();
   }
-
-  const extent: [[number, number], [number, number]] = [
-    [padding.left, padding.top],
-    [
-      Math.max(padding.left + 1, width - padding.right),
-      Math.max(padding.top + 1, height - padding.bottom),
-    ],
-  ];
 
   if (flights.length === 0) {
     return createWorldProjection(dimensions, padding);
   }
 
-  const bounds = computeFlightGeoBounds(collectFlightBoundsCoordinates(flights));
+  const fitCoordinates = sanitizeCoordinates(collectFlightBoundsCoordinates(flights));
+  if (fitCoordinates.length === 0) {
+    return createWorldProjection(dimensions, padding);
+  }
+
+  const bounds = computeFlightGeoBounds(fitCoordinates);
   if (!bounds) {
     return createWorldProjection(dimensions, padding);
   }
 
-  const fitCoordinates = collectFlightBoundsCoordinates(flights);
-  const projection = createBaseProjection();
+  const projection = fitProjectionToCoordinates(
+    fitCoordinates,
+    dimensions,
+    padding,
+    [bounds.centerLng, bounds.centerLat]
+  );
 
-  try {
-    projection.center([bounds.centerLng, bounds.centerLat]);
-    projection.fitExtent(
-      extent,
-      boundsToFitFeature(fitCoordinates, bounds.centerLng)
-    );
-  } catch (error) {
-    console.error("[flights] Failed to fit map projection:", error);
-    return createWorldProjection(dimensions, padding);
-  }
-
-  return projection;
+  return isProjectionValid(projection)
+    ? projection
+    : createWorldProjection(dimensions, padding);
 }
 
 function lerpNumber(from: number, to: number, t: number): number {
@@ -358,92 +524,58 @@ export function easeInOutCubic(t: number): number {
   return t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2;
 }
 
-/** Sample a great-circle path and project to SVG coordinates. */
-export function buildProjectedRoutePoints(
-  startLng: number,
-  startLat: number,
-  endLng: number,
-  endLat: number,
-  projection: GeoProjection,
-  samples = 64
-): Array<[number, number] | null> {
-  const interpolate = geoInterpolate([startLng, startLat], [endLng, endLat]);
-  const points: Array<[number, number] | null> = [];
-
-  for (let index = 0; index <= samples; index += 1) {
-    const [lng, lat] = interpolate(index / samples);
-    const projected = projection([lng, lat]);
-
-    if (
-      projected === null ||
-      projected[0] === undefined ||
-      projected[1] === undefined ||
-      Number.isNaN(projected[0]) ||
-      Number.isNaN(projected[1])
-    ) {
-      points.push(null);
-      continue;
-    }
-
-    points.push([projected[0], projected[1]]);
-  }
-
-  return points;
-}
-
-/** Convert projected points to a smooth SVG path (skips null gaps from antimeridian). */
-export function pointsToSvgPath(points: Array<[number, number] | null>): string {
-  const segments: string[] = [];
-  let current: string[] = [];
-
-  for (const point of points) {
-    if (!point) {
-      if (current.length) {
-        segments.push(current.join(" "));
-        current = [];
-      }
-      continue;
-    }
-
-    const [x, y] = point;
-    current.push(current.length === 0 ? `M${x},${y}` : `L${x},${y}`);
-  }
-
-  if (current.length) {
-    segments.push(current.join(" "));
-  }
-
-  return segments.join(" ");
-}
-
-export function buildRouteSvgPath(
-  startLng: number,
-  startLat: number,
-  endLng: number,
-  endLat: number,
-  projection: GeoProjection
-): string {
-  const points = buildProjectedRoutePoints(
-    startLng,
-    startLat,
-    endLng,
-    endLat,
-    projection
-  );
-
-  return pointsToSvgPath(points);
-}
-
 export function createCountryPathGenerator(projection: GeoProjection) {
-  const path = geoPath(projection);
+  if (!isProjectionValid(projection)) {
+    return () => "";
+  }
+
+  let path: ReturnType<typeof geoPath> | null = null;
+
+  try {
+    path = geoPath(projection);
+  } catch {
+    return () => "";
+  }
 
   return (object: GeoPermissibleObjects) => {
+    if (!path) return "";
+
     try {
-      return path(object) ?? "";
+      const result = path(object);
+      return typeof result === "string" ? result : "";
     } catch {
       return "";
     }
   };
+}
+
+export function buildCountryPaths(
+  countries: GeoPermissibleObjects[],
+  projection: GeoProjection
+): Array<{ key: string; d: string }> {
+  if (!isProjectionValid(projection) || countries.length === 0) {
+    return [];
+  }
+
+  const pathForFeature = createCountryPathGenerator(projection);
+  const paths: Array<{ key: string; d: string }> = [];
+
+  for (const feature of countries) {
+    try {
+      const d = pathForFeature(feature);
+      if (!d) continue;
+
+      const featureId = (feature as { id?: string | number }).id?.toString();
+      paths.push({
+        key: featureId ?? d.slice(0, 24),
+        d,
+      });
+    } catch {
+      // Skip malformed country geometries.
+    }
+  }
+
+  return paths;
 }
 
 export function projectPoint(

@@ -8,7 +8,10 @@ export interface AirportLookupData {
   icao?: string | null;
   name: string;
   city: string;
+  /** Canonical English country name. */
   country: string;
+  /** ISO 3166-1 alpha-2 when known. */
+  countryCode?: string | null;
   latitude: number;
   longitude: number;
   timezone?: string | null;

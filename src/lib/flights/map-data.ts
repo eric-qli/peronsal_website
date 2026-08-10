@@ -1,14 +1,14 @@
-import { type Flight } from "@/lib/flights/types";
+import { type GeoProjection } from "d3-geo";
 import {
   buildRouteLayoutByFlightId,
-  fanRouteEndpoints,
   getRoutePairKey,
 } from "@/lib/flights/arc-layout";
-import { type GeoProjection } from "d3-geo";
-import { buildRouteSvgPath, projectPoint } from "@/lib/flights/map-projection";
-
-/** Smaller lateral offset than the globe so parallel routes stay readable on a flat map. */
-const MAP_FAN_OFFSET_SCALE = 0.22;
+import {
+  buildFlightRouteGeometry,
+  type RouteDistanceStyle,
+} from "@/lib/flights/route-geometry";
+import { projectPoint } from "@/lib/flights/map-projection";
+import { type Flight } from "@/lib/flights/types";
 
 export interface MapRouteDatum {
   id: string;
@@ -19,7 +19,10 @@ export interface MapRouteDatum {
   endLng: number;
   routeIndex: number;
   routePairKey: string;
-  path: string;
+  /** One or more SVG path segments (split at the dateline / projection seams). */
+  paths: string[];
+  style: RouteDistanceStyle;
+  distanceKm: number;
 }
 
 export interface MapAirportDatum {
@@ -36,37 +39,6 @@ export interface MapAirportDatum {
   y: number;
 }
 
-function fanRouteEndpointsForMap(
-  startLat: number,
-  startLng: number,
-  endLat: number,
-  endLng: number,
-  routeIndex: number,
-  routeCount: number
-): { startLat: number; startLng: number; endLat: number; endLng: number } {
-  const fanned = fanRouteEndpoints(
-    startLat,
-    startLng,
-    endLat,
-    endLng,
-    routeIndex,
-    routeCount
-  );
-
-  if (routeCount <= 1) {
-    return fanned;
-  }
-
-  const blend = (from: number, to: number) => from + (to - from) * MAP_FAN_OFFSET_SCALE;
-
-  return {
-    startLat: blend(startLat, fanned.startLat),
-    startLng: blend(startLng, fanned.startLng),
-    endLat: blend(endLat, fanned.endLat),
-    endLng: blend(endLng, fanned.endLng),
-  };
-}
-
 export function flightsToMapRoutes(
   flights: Flight[],
   projection: GeoProjection
@@ -80,31 +52,31 @@ export function flightsToMapRoutes(
       routeCount: 1,
     };
 
-    const endpoints = fanRouteEndpointsForMap(
-      flight.departureLat,
+    const geometry = buildFlightRouteGeometry(
       flight.departureLng,
-      flight.arrivalLat,
+      flight.departureLat,
       flight.arrivalLng,
+      flight.arrivalLat,
+      projection,
       layout.routeIndex,
-      layout.routeCount
+      flight.distanceKm
     );
+
+    if (geometry.paths.length === 0) continue;
 
     routes.push({
       id: flight.id,
       flight,
-      startLat: endpoints.startLat,
-      startLng: endpoints.startLng,
-      endLat: endpoints.endLat,
-      endLng: endpoints.endLng,
+      // Always keep true airport coordinates.
+      startLat: flight.departureLat,
+      startLng: flight.departureLng,
+      endLat: flight.arrivalLat,
+      endLng: flight.arrivalLng,
       routeIndex: layout.routeIndex,
       routePairKey: getRoutePairKey(flight),
-      path: buildRouteSvgPath(
-        endpoints.startLng,
-        endpoints.startLat,
-        endpoints.endLng,
-        endpoints.endLat,
-        projection
-      ),
+      paths: geometry.paths,
+      style: geometry.style,
+      distanceKm: geometry.distanceKm,
     });
   }
 

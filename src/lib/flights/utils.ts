@@ -1,8 +1,15 @@
+import {
+  getCityAggregationKey,
+  getCountryAggregationKey,
+  normalizeCity,
+  normalizeCountry,
+} from "@/lib/flights/location-normalize";
 import { type Flight, type FlightStats } from "@/lib/flights/types";
 
 export function computeFlightStats(flights: Flight[]): FlightStats {
   const airportCodes = new Set<string>();
   const countries = new Set<string>();
+  const cities = new Set<string>();
 
   let totalDistanceKm = 0;
 
@@ -10,12 +17,41 @@ export function computeFlightStats(flights: Flight[]): FlightStats {
     airportCodes.add(flight.departureIata);
     airportCodes.add(flight.arrivalIata);
 
-    if (flight.departureCountry) {
-      countries.add(flight.departureCountry);
-    }
-    if (flight.arrivalCountry) {
-      countries.add(flight.arrivalCountry);
-    }
+    const departureCountry = normalizeCountry(
+      flight.departureCountry,
+      flight.departureCountryCode
+    );
+    const arrivalCountry = normalizeCountry(
+      flight.arrivalCountry,
+      flight.arrivalCountryCode
+    );
+
+    const departureCountryKey = getCountryAggregationKey(departureCountry);
+    const arrivalCountryKey = getCountryAggregationKey(arrivalCountry);
+    if (departureCountryKey) countries.add(departureCountryKey);
+    if (arrivalCountryKey) countries.add(arrivalCountryKey);
+
+    const departureCity = normalizeCity(
+      flight.departureCity,
+      flight.departureCountry,
+      flight.departureCountryCode,
+      flight.departureIata
+    );
+    const arrivalCity = normalizeCity(
+      flight.arrivalCity,
+      flight.arrivalCountry,
+      flight.arrivalCountryCode,
+      flight.arrivalIata
+    );
+
+    cities.add(
+      departureCity.cityKey ||
+        getCityAggregationKey(departureCity.city, departureCountry)
+    );
+    cities.add(
+      arrivalCity.cityKey ||
+        getCityAggregationKey(arrivalCity.city, arrivalCountry)
+    );
 
     if (flight.distanceKm !== null) {
       totalDistanceKm += flight.distanceKm;
@@ -27,6 +63,7 @@ export function computeFlightStats(flights: Flight[]): FlightStats {
     totalDistanceKm,
     uniqueAirports: airportCodes.size,
     uniqueCountries: countries.size,
+    uniqueCities: cities.size,
   };
 }
 

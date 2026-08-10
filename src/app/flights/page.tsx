@@ -21,7 +21,7 @@ export default async function FlightsPage() {
   }
 
   return (
-    <div className="min-h-screen overflow-x-hidden bg-[#080B10]">
+    <div className="min-h-screen overflow-x-hidden bg-[#04080a]">
       <Navbar />
       <main className="pt-[5.5rem] md:pt-24">
         <FlightsPageContent initialFlights={initialFlights} />

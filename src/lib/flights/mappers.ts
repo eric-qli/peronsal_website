@@ -1,24 +1,40 @@
 import { type FlightRow } from "@/lib/supabase/flight-row";
 import { type FlightLookupResult } from "@/lib/flights/providers/types";
 import { type CreateFlightPayload } from "@/lib/flights/schemas";
+import { normalizeAirport } from "@/lib/flights/location-normalize";
 import { normalizeFlightNumber } from "@/lib/flights/normalize-flight-number";
 import { type CabinClass, type Flight } from "@/lib/flights/types";
 
 export function mapRowToFlight(row: FlightRow): Flight {
+  const departure = normalizeAirport({
+    airportCode: row.departure_iata,
+    name: row.departure_airport,
+    city: row.departure_city,
+    country: row.departure_country,
+  });
+  const arrival = normalizeAirport({
+    airportCode: row.arrival_iata,
+    name: row.arrival_airport,
+    city: row.arrival_city,
+    country: row.arrival_country,
+  });
+
   return {
     id: row.id,
     flightNumber: row.flight_number,
     airline: row.airline,
-    departureIata: row.departure_iata,
-    departureAirport: row.departure_airport,
-    departureCity: row.departure_city,
-    departureCountry: row.departure_country,
+    departureIata: departure.airportCode,
+    departureAirport: departure.name,
+    departureCity: departure.city,
+    departureCountry: departure.countryName || null,
+    departureCountryCode: departure.countryCode,
     departureLat: row.departure_lat,
     departureLng: row.departure_lng,
-    arrivalIata: row.arrival_iata,
-    arrivalAirport: row.arrival_airport,
-    arrivalCity: row.arrival_city,
-    arrivalCountry: row.arrival_country,
+    arrivalIata: arrival.airportCode,
+    arrivalAirport: arrival.name,
+    arrivalCity: arrival.city,
+    arrivalCountry: arrival.countryName || null,
+    arrivalCountryCode: arrival.countryCode,
     arrivalLat: row.arrival_lat,
     arrivalLng: row.arrival_lng,
     departureDate: row.departure_date,
@@ -58,22 +74,37 @@ export function lookupResultToCreatePayload(
     notes?: string | null;
   }
 ): CreateFlightPayload {
+  const departure = normalizeAirport({
+    airportCode: result.departure.iata,
+    name: result.departure.name,
+    city: result.departure.city,
+    country: result.departure.country,
+    countryCode: result.departure.countryCode,
+  });
+  const arrival = normalizeAirport({
+    airportCode: result.arrival.iata,
+    name: result.arrival.name,
+    city: result.arrival.city,
+    country: result.arrival.country,
+    countryCode: result.arrival.countryCode,
+  });
+
   return {
     flightNumber: normalizeFlightNumber(result.marketingFlightNumber),
     airline: result.airlineName,
-    departureIata: result.departure.iata,
-    arrivalIata: result.arrival.iata,
+    departureIata: departure.airportCode,
+    arrivalIata: arrival.airportCode,
     departureDate: options.departureDate,
     aircraft: result.aircraftModel ?? null,
     cabinClass: options.cabinClass ?? null,
     seat: options.seat ?? null,
     notes: options.notes ?? null,
-    departureAirport: result.departure.name,
-    departureCity: result.departure.city,
-    departureCountry: result.departure.country,
-    arrivalAirport: result.arrival.name,
-    arrivalCity: result.arrival.city,
-    arrivalCountry: result.arrival.country,
+    departureAirport: departure.name,
+    departureCity: departure.city,
+    departureCountry: departure.countryName,
+    arrivalAirport: arrival.name,
+    arrivalCity: arrival.city,
+    arrivalCountry: arrival.countryName,
     departureLat: result.departure.latitude,
     departureLng: result.departure.longitude,
     arrivalLat: result.arrival.latitude,

@@ -9,16 +9,21 @@
  * Keep the Airport interface stable so callers do not need to change.
  */
 
+import { normalizeAirport } from "@/lib/flights/location-normalize";
+
 export interface Airport {
   iata: string;
   name: string;
   city: string;
   country: string;
+  countryCode: string | null;
   latitude: number;
   longitude: number;
 }
 
-const AIRPORTS: Airport[] = [
+type AirportSeed = Omit<Airport, "countryCode">;
+
+const AIRPORT_SEEDS: AirportSeed[] = [
   {
     iata: "YVR",
     name: "Vancouver International Airport",
@@ -212,6 +217,27 @@ const AIRPORTS: Airport[] = [
     longitude: 103.9915,
   },
 ];
+
+const AIRPORTS: Airport[] = AIRPORT_SEEDS.map((seed) => {
+  const normalized = normalizeAirport({
+    airportCode: seed.iata,
+    name: seed.name,
+    city: seed.city,
+    country: seed.country,
+    latitude: seed.latitude,
+    longitude: seed.longitude,
+  });
+
+  return {
+    iata: normalized.airportCode,
+    name: normalized.name,
+    city: normalized.city,
+    country: normalized.countryName,
+    countryCode: normalized.countryCode,
+    latitude: seed.latitude,
+    longitude: seed.longitude,
+  };
+});
 
 const AIRPORT_BY_IATA = new Map<string, Airport>(
   AIRPORTS.map((airport) => [airport.iata, airport])

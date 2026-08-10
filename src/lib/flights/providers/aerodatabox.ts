@@ -2,6 +2,7 @@ import "server-only";
 
 import { getAirportByIata } from "@/lib/flights/airports";
 import { calculateDistanceKm } from "@/lib/flights/distance";
+import { normalizeCountry } from "@/lib/flights/location-normalize";
 import {
   type AirportLookupData,
   type FlightLookupRequest,
@@ -85,9 +86,18 @@ function getConfig() {
   return { apiKey, baseUrl, apiHost };
 }
 
-function countryLabel(code: string | null | undefined): string {
-  if (!code) return "";
-  return code.toUpperCase();
+function countryFromProviderCode(code: string | null | undefined): {
+  country: string;
+  countryCode: string | null;
+} {
+  const normalized = normalizeCountry(null, code);
+  if (!normalized) {
+    return { country: "", countryCode: null };
+  }
+  return {
+    country: normalized.countryName,
+    countryCode: normalized.countryCode,
+  };
 }
 
 function toIsoTimestamp(value: AeroDateTime | null | undefined): string | null {
@@ -108,13 +118,15 @@ function mapAirportFromMovement(
 
   const latitude = airport.location?.lat ?? undefined;
   const longitude = airport.location?.lon ?? undefined;
+  const country = countryFromProviderCode(airport.countryCode);
 
   return {
     iata: airport.iata.toUpperCase(),
     icao: airport.icao?.toUpperCase() ?? null,
     name: airport.name ?? airport.iata,
     city: airport.municipalityName ?? "",
-    country: countryLabel(airport.countryCode),
+    country: country.country,
+    countryCode: country.countryCode,
     latitude,
     longitude,
     timezone: airport.timeZone ?? null,
@@ -138,6 +150,7 @@ async function enrichAirport(
       name: partial.name,
       city: partial.city,
       country: partial.country,
+      countryCode: partial.countryCode,
       latitude: partial.latitude,
       longitude: partial.longitude,
       timezone: partial.timezone,
@@ -154,6 +167,7 @@ async function enrichAirport(
     name: partial.name || local.name,
     city: partial.city || local.city,
     country: partial.country || local.country,
+    countryCode: partial.countryCode || local.countryCode,
     latitude: local.latitude,
     longitude: local.longitude,
     timezone: partial.timezone,

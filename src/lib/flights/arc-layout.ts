@@ -217,8 +217,9 @@ export interface GlobePointOfView {
 }
 
 export function computeInitialPointOfView(flights: Flight[]): GlobePointOfView {
+  // Default focus: North America / Pacific corridor.
   if (flights.length === 0) {
-    return { lat: 18, lng: 0, altitude: 2.45 };
+    return { lat: 38, lng: -140, altitude: 2.35 };
   }
 
   let latSum = 0;
@@ -227,13 +228,26 @@ export function computeInitialPointOfView(flights: Flight[]): GlobePointOfView {
 
   for (const flight of flights) {
     latSum += flight.departureLat + flight.arrivalLat;
-    lngSum += flight.departureLng + flight.arrivalLng;
+    // Unwrap longitudes toward the Pacific so averages don't jump across Europe.
+    const depLng = flight.departureLng;
+    const arrLng = flight.arrivalLng;
+    const unwrap = (lng: number) => {
+      let value = lng;
+      while (value - (-150) > 180) value -= 360;
+      while (value - (-150) < -180) value += 360;
+      return value;
+    };
+    lngSum += unwrap(depLng) + unwrap(arrLng);
     count += 2;
   }
 
+  let lng = lngSum / count;
+  while (lng > 180) lng -= 360;
+  while (lng < -180) lng += 360;
+
   return {
     lat: latSum / count,
-    lng: lngSum / count,
-    altitude: 2.15,
+    lng,
+    altitude: 2.2,
   };
 }

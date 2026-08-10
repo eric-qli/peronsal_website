@@ -6,287 +6,128 @@ import {
   useMemo,
   useRef,
   useState,
-  type MouseEvent as ReactMouseEvent,
 } from "react";
-import { type GeoPermissibleObjects, type GeoProjection } from "d3-geo";
+import Globe from "react-globe.gl";
+import type { GlobeMethods } from "react-globe.gl";
+import * as THREE from "three";
 import {
   COUNTRIES_GEOJSON_URL,
   FLIGHT_MAP_COLORS,
-  MAP_ROUTE_STYLES,
+  GLOBE_THEME,
   MAP_THEME,
 } from "@/lib/flights/map-style";
+import { computeInitialPointOfView } from "@/lib/flights/arc-layout";
+import { computeRouteMidpoint } from "@/lib/flights/globe-arc-geometry";
 import {
-  flightsToMapAirports,
-  flightsToMapRoutes,
-  type MapAirportDatum,
-  type MapRouteDatum,
-} from "@/lib/flights/map-data";
+  flightsToAggregatedRoutePaths,
+  flightsToGlobeAirports,
+  flightsToIndividualFlightPaths,
+  renderAggregatedRouteLabelHtml,
+  renderAirportLabelHtml,
+  renderFlightPathLabelHtml,
+  type GlobeAirportDatum,
+  type GlobePathDatum,
+} from "@/lib/flights/globe-data";
 import {
-  buildFlightBoundsKey,
-  cloneProjection,
-  createCountryPathGenerator,
-  createFlightMapProjection,
-  createProjectionInterpolator,
-  createWorldProjection,
-  easeInOutCubic,
-  MAP_FIT_PADDING_PX,
-} from "@/lib/flights/map-projection";
+  groupFlightsByRoute,
+  type FlightVisualizationMode,
+} from "@/lib/flights/route-groups";
 import { type Flight } from "@/lib/flights/types";
-import {
-  FlightAirportTooltip,
-  FlightRouteTooltip,
-} from "@/components/flights/FlightTooltip";
 
 interface CountryFeatureCollection {
-  features: GeoPermissibleObjects[];
+  features: Array<{
+    properties?: Record<string, string | number | undefined>;
+  }>;
 }
 
 interface FlightMapProps {
   flights: Flight[];
+  mode: FlightVisualizationMode;
+  selectedRouteKey: string | null;
   selectedFlightId: string | null;
+  onSelectRoute: (routeKey: string) => void;
   onSelectFlight: (flight: Flight) => void;
 }
 
-interface TooltipState {
-  kind: "route" | "airport";
-  x: number;
-  y: number;
-  route?: MapRouteDatum;
-  airport?: MapAirportDatum;
+function detectWebGLSupport(): boolean {
+  if (typeof document === "undefined") return true;
+
+  try {
+    const canvas = document.createElement("canvas");
+    return Boolean(
+      canvas.getContext("webgl") || canvas.getContext("experimental-webgl")
+    );
+  } catch {
+    return false;
+  }
 }
 
-const INTRO_ANIMATION_MS = 1400;
-const INTRO_STAGGER_MS = 90;
-const MAP_FLY_DURATION_MS = 900;
+function asPath(obj: object): GlobePathDatum {
+  return obj as GlobePathDatum;
+}
 
-function useContainerSize() {
+function asAirport(obj: object): GlobeAirportDatum {
+  return obj as GlobeAirportDatum;
+}
+
+export default function FlightMap({
+  flights,
+  mode,
+  selectedRouteKey,
+  selectedFlightId,
+  onSelectRoute,
+  onSelectFlight,
+}: FlightMapProps) {
+  const globeRef = useRef<GlobeMethods | undefined>(undefined);
   const containerRef = useRef<HTMLDivElement>(null);
-  const [size, setSize] = useState({ width: 0, height: 0 });
+  const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
+  const [countries, setCountries] = useState<CountryFeatureCollection["features"]>(
+    []
+  );
+  const [webglSupported] = useState(() => detectWebGLSupport());
+  const [hoveredRouteKey, setHoveredRouteKey] = useState<string | null>(null);
+  const [hoveredFlightId, setHoveredFlightId] = useState<string | null>(null);
+  const hasSetInitialView = useRef(false);
+
+  const airports = useMemo(() => flightsToGlobeAirports(flights), [flights]);
+  const paths = useMemo(
+    () =>
+      mode === "routes"
+        ? flightsToAggregatedRoutePaths(flights)
+        : flightsToIndividualFlightPaths(flights),
+    [flights, mode]
+  );
+  const routesByKey = useMemo(() => {
+    const map = new Map(
+      groupFlightsByRoute(flights).map((route) => [route.key, route])
+    );
+    return map;
+  }, [flights]);
+
+  const globeMaterial = useMemo(
+    () =>
+      new THREE.MeshPhongMaterial({
+        color: GLOBE_THEME.ocean,
+        emissive: "#020608",
+        shininess: 5,
+      }),
+    []
+  );
 
   useEffect(() => {
     const element = containerRef.current;
     if (!element) return;
 
     const observer = new ResizeObserver(([entry]) => {
-      const { width, height } = entry.contentRect;
-      setSize({ width: Math.round(width), height: Math.round(height) });
+      setDimensions({
+        width: Math.round(entry.contentRect.width),
+        height: Math.round(entry.contentRect.height),
+      });
     });
 
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
-
-  return { containerRef, size };
-}
-
-const MAP_PADDING = {
-  top: MAP_FIT_PADDING_PX,
-  right: MAP_FIT_PADDING_PX,
-  bottom: MAP_FIT_PADDING_PX,
-  left: MAP_FIT_PADDING_PX,
-};
-
-function useAnimatedMapProjection(
-  flights: Flight[],
-  size: { width: number; height: number }
-): GeoProjection | null {
-  const [displayProjection, setDisplayProjection] = useState<GeoProjection | null>(
-    null
-  );
-  const displayProjectionRef = useRef<GeoProjection | null>(null);
-  const animationFrameRef = useRef<number | null>(null);
-
-  const boundsKey = useMemo(
-    () =>
-      size.width > 0 && size.height > 0
-        ? buildFlightBoundsKey(flights, size.width, size.height)
-        : null,
-    [flights, size.height, size.width]
-  );
-
-  useEffect(() => {
-    displayProjectionRef.current = displayProjection;
-  }, [displayProjection]);
-
-  useEffect(() => {
-    if (!boundsKey || size.width <= 0 || size.height <= 0) return;
-
-    let targetProjection: GeoProjection;
-    try {
-      targetProjection = createFlightMapProjection(flights, size, MAP_PADDING);
-    } catch (error) {
-      console.error("[flights] Failed to create target projection:", error);
-      targetProjection = createWorldProjection(size, MAP_PADDING);
-    }
-
-    const fromProjection =
-      displayProjectionRef.current ?? createWorldProjection(size, MAP_PADDING);
-
-    if (!displayProjectionRef.current) {
-      const initial = cloneProjection(fromProjection);
-      displayProjectionRef.current = initial;
-      setDisplayProjection(initial);
-    }
-
-    if (animationFrameRef.current !== null) {
-      cancelAnimationFrame(animationFrameRef.current);
-      animationFrameRef.current = null;
-    }
-
-    const interpolator = createProjectionInterpolator(fromProjection, targetProjection);
-    const start = performance.now();
-
-    const tick = (now: number) => {
-      try {
-        const elapsed = now - start;
-        const progress = Math.min(1, elapsed / MAP_FLY_DURATION_MS);
-        const eased = easeInOutCubic(progress);
-        const nextProjection = interpolator(eased);
-        const cloned = cloneProjection(nextProjection);
-        displayProjectionRef.current = cloned;
-        setDisplayProjection(cloned);
-
-        if (progress < 1) {
-          animationFrameRef.current = requestAnimationFrame(tick);
-        } else {
-          animationFrameRef.current = null;
-        }
-      } catch (error) {
-        console.error("[flights] Map projection animation failed:", error);
-        const fallback = cloneProjection(targetProjection);
-        displayProjectionRef.current = fallback;
-        setDisplayProjection(fallback);
-        animationFrameRef.current = null;
-      }
-    };
-
-    animationFrameRef.current = requestAnimationFrame(tick);
-
-    return () => {
-      if (animationFrameRef.current !== null) {
-        cancelAnimationFrame(animationFrameRef.current);
-        animationFrameRef.current = null;
-      }
-    };
-  }, [boundsKey, flights, size]);
-
-  return displayProjection;
-}
-
-function AnimatedRoutePath({
-  route,
-  isSelected,
-  isHovered,
-  animate,
-  animationDelayMs,
-  onMouseEnter,
-  onMouseLeave,
-  onClick,
-}: {
-  route: MapRouteDatum;
-  isSelected: boolean;
-  isHovered: boolean;
-  animate: boolean;
-  animationDelayMs: number;
-  onMouseEnter: (event: ReactMouseEvent<SVGPathElement>) => void;
-  onMouseLeave: () => void;
-  onClick: () => void;
-}) {
-  const glowRef = useRef<SVGPathElement>(null);
-  const coreRef = useRef<SVGPathElement>(null);
-
-  useEffect(() => {
-    if (!animate) return;
-
-    for (const element of [glowRef.current, coreRef.current]) {
-      if (!element) continue;
-
-      const length = element.getTotalLength();
-      element.style.strokeDasharray = `${length}`;
-      element.style.strokeDashoffset = `${length}`;
-      element.style.transition = "none";
-
-      requestAnimationFrame(() => {
-        element.style.transition = `stroke-dashoffset ${INTRO_ANIMATION_MS}ms cubic-bezier(0.4, 0, 0.2, 1) ${animationDelayMs}ms`;
-        element.style.strokeDashoffset = "0";
-      });
-    }
-  }, [animate, animationDelayMs, route.path]);
-
-  const glowColor = isSelected
-    ? FLIGHT_MAP_COLORS.routeGlowSelected
-    : isHovered
-      ? FLIGHT_MAP_COLORS.routeGlowHover
-      : FLIGHT_MAP_COLORS.routeGlow;
-  const coreColor = isSelected
-    ? FLIGHT_MAP_COLORS.routeCoreSelected
-    : isHovered
-      ? FLIGHT_MAP_COLORS.routeCoreHover
-      : FLIGHT_MAP_COLORS.routeCore;
-  const glowWidth = isSelected || isHovered
-    ? MAP_ROUTE_STYLES.glowWidthHover
-    : MAP_ROUTE_STYLES.glowWidth;
-  const coreWidth = isSelected
-    ? MAP_ROUTE_STYLES.coreWidthSelected
-    : isHovered
-      ? MAP_ROUTE_STYLES.coreWidthHover
-      : MAP_ROUTE_STYLES.coreWidth;
-
-  return (
-    <g
-      className="cursor-pointer"
-      onMouseEnter={onMouseEnter}
-      onMouseLeave={onMouseLeave}
-      onClick={onClick}
-    >
-      <path
-        ref={glowRef}
-        d={route.path}
-        fill="none"
-        stroke={glowColor}
-        strokeWidth={glowWidth}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        pointerEvents="none"
-        style={{ strokeDashoffset: animate ? undefined : 0 }}
-      />
-      <path
-        ref={coreRef}
-        d={route.path}
-        fill="none"
-        stroke={coreColor}
-        strokeWidth={coreWidth}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        pointerEvents="none"
-        style={{ strokeDashoffset: animate ? undefined : 0 }}
-      />
-      <path
-        d={route.path}
-        fill="none"
-        stroke="transparent"
-        strokeWidth={12}
-        strokeLinecap="round"
-        pointerEvents="stroke"
-      />
-    </g>
-  );
-}
-
-export default function FlightMap({
-  flights,
-  selectedFlightId,
-  onSelectFlight,
-}: FlightMapProps) {
-  const { containerRef, size } = useContainerSize();
-  const projection = useAnimatedMapProjection(flights, size);
-  const [countries, setCountries] = useState<GeoPermissibleObjects[]>([]);
-  const [tooltip, setTooltip] = useState<TooltipState | null>(null);
-  const [hoveredRouteId, setHoveredRouteId] = useState<string | null>(null);
-  const [hoveredAirportIata, setHoveredAirportIata] = useState<string | null>(
-    null
-  );
-  const [introAnimationComplete, setIntroAnimationComplete] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -308,203 +149,223 @@ export default function FlightMap({
   }, []);
 
   useEffect(() => {
-    if (introAnimationComplete || flights.length === 0) return;
+    const globe = globeRef.current;
+    if (!globe || !dimensions.width || !dimensions.height) return;
 
-    const timer = window.setTimeout(() => {
-      setIntroAnimationComplete(true);
-    }, INTRO_ANIMATION_MS + flights.length * INTRO_STAGGER_MS + 200);
-
-    return () => window.clearTimeout(timer);
-  }, [flights.length, introAnimationComplete]);
-
-  const countryPaths = useMemo(() => {
-    if (!projection || !size.width || !size.height || !countries.length) {
-      return [];
+    if (!hasSetInitialView.current) {
+      hasSetInitialView.current = true;
+      globe.pointOfView(computeInitialPointOfView(flights), 1200);
     }
 
-    const pathForFeature = createCountryPathGenerator(projection);
-    return countries
-      .map((feature) => {
-        const d = pathForFeature(feature);
-        const featureId = (feature as { id?: string | number }).id?.toString();
-        return {
-          key: featureId ?? (d || Math.random().toString()),
-          d,
-        };
-      })
-      .filter((entry) => entry.d.length > 0);
-  }, [countries, projection, size.height, size.width]);
+    const controls = globe.controls();
+    controls.enablePan = false;
+    controls.minDistance = 160;
+    controls.maxDistance = 520;
+    controls.autoRotate = false;
+  }, [dimensions.height, dimensions.width, flights]);
 
-  const routes = useMemo(
-    () =>
-      projection && size.width && size.height
-        ? flightsToMapRoutes(flights, projection)
-        : [],
-    [flights, projection, size.height, size.width]
-  );
+  useEffect(() => {
+    const globe = globeRef.current;
+    if (!globe || !selectedRouteKey) return;
 
-  const airports = useMemo(
-    () =>
-      projection && size.width && size.height
-        ? flightsToMapAirports(flights, projection)
-        : [],
-    [flights, projection, size.height, size.width]
-  );
+    const route = routesByKey.get(selectedRouteKey);
+    if (!route) return;
 
-  const updateTooltipPosition = useCallback(
-    (event: ReactMouseEvent, next: Omit<TooltipState, "x" | "y">) => {
-      const rect = containerRef.current?.getBoundingClientRect();
-      if (!rect) return;
+    const mid = computeRouteMidpoint(route);
+    globe.pointOfView({ lat: mid.lat, lng: mid.lng, altitude: 2.05 }, 900);
+  }, [routesByKey, selectedRouteKey]);
 
-      setTooltip({
-        ...next,
-        x: event.clientX - rect.left + 14,
-        y: event.clientY - rect.top + 14,
-      });
+  const getPathColor = useCallback(
+    (obj: object) => {
+      const path = asPath(obj);
+
+      if (path.kind === "route") {
+        const isSelected = path.routeKey === selectedRouteKey;
+        const isHovered = path.routeKey === hoveredRouteKey;
+        const isDimmed =
+          (selectedRouteKey !== null || hoveredRouteKey !== null) &&
+          !isSelected &&
+          !isHovered;
+
+        if (path.isGlow) {
+          if (isDimmed) return FLIGHT_MAP_COLORS.routeGlowDimmed;
+          if (isSelected) return FLIGHT_MAP_COLORS.routeGlowSelected;
+          if (isHovered) return FLIGHT_MAP_COLORS.routeGlowHover;
+          return `rgba(${FLIGHT_MAP_COLORS.routeGlowRgb}, ${path.style.glowOpacity})`;
+        }
+
+        if (isDimmed) return FLIGHT_MAP_COLORS.routeCoreDimmed;
+        if (isSelected) return FLIGHT_MAP_COLORS.routeCoreSelected;
+        if (isHovered) return FLIGHT_MAP_COLORS.routeCoreHover;
+        return `rgba(${FLIGHT_MAP_COLORS.routeCoreRgb}, ${path.style.coreOpacity})`;
+      }
+
+      const flightId = path.flight?.id ?? null;
+      const isSelected = flightId !== null && flightId === selectedFlightId;
+      const isHovered = flightId !== null && flightId === hoveredFlightId;
+      const isDimmed =
+        (selectedFlightId !== null || hoveredFlightId !== null) &&
+        !isSelected &&
+        !isHovered;
+
+      if (path.isGlow) {
+        if (isDimmed) return FLIGHT_MAP_COLORS.routeGlowDimmed;
+        if (isSelected) return FLIGHT_MAP_COLORS.routeGlowSelected;
+        if (isHovered) return FLIGHT_MAP_COLORS.routeGlowHover;
+        return `rgba(${FLIGHT_MAP_COLORS.routeGlowRgb}, 0.42)`;
+      }
+
+      if (isDimmed) return FLIGHT_MAP_COLORS.routeCoreDimmed;
+      if (isSelected) return FLIGHT_MAP_COLORS.routeCoreSelected;
+      if (isHovered) return FLIGHT_MAP_COLORS.routeCoreHover;
+      return `rgba(${FLIGHT_MAP_COLORS.routeCoreRgb}, 0.94)`;
     },
-    [containerRef]
+    [hoveredFlightId, hoveredRouteKey, selectedFlightId, selectedRouteKey]
   );
 
-  const handleRouteMouseEnter = useCallback(
-    (route: MapRouteDatum, event: ReactMouseEvent<SVGPathElement>) => {
-      setHoveredRouteId(route.id);
-      updateTooltipPosition(event, { kind: "route", route });
+  const getPathStroke = useCallback(
+    (obj: object) => {
+      const path = asPath(obj);
+
+      if (path.kind === "route") {
+        const isSelected = path.routeKey === selectedRouteKey;
+        const isHovered = path.routeKey === hoveredRouteKey;
+
+        if (path.isGlow) {
+          if (isSelected) return path.style.glowStroke * 1.45;
+          if (isHovered) return path.style.glowStroke * 1.3;
+          return path.style.glowStroke;
+        }
+
+        if (isSelected) return path.style.stroke * 1.4;
+        if (isHovered) return path.style.stroke * 1.3;
+        return path.style.stroke;
+      }
+
+      const flightId = path.flight?.id ?? null;
+      const isSelected = flightId !== null && flightId === selectedFlightId;
+      const isHovered = flightId !== null && flightId === hoveredFlightId;
+
+      if (path.isGlow) {
+        if (isSelected) return 2.6;
+        if (isHovered) return 2.35;
+        return 1.95;
+      }
+
+      if (isSelected) return 1.25;
+      if (isHovered) return 1.15;
+      return 0.95;
     },
-    [updateTooltipPosition]
+    [hoveredFlightId, hoveredRouteKey, selectedFlightId, selectedRouteKey]
   );
 
-  const handleAirportMouseEnter = useCallback(
-    (airport: MapAirportDatum, event: ReactMouseEvent<SVGElement>) => {
-      setHoveredAirportIata(airport.iata);
-      updateTooltipPosition(event, { kind: "airport", airport });
-    },
-    [updateTooltipPosition]
-  );
-
-  const clearHover = useCallback(() => {
-    setHoveredRouteId(null);
-    setHoveredAirportIata(null);
-    setTooltip(null);
-  }, []);
-
-  const playIntroAnimation = !introAnimationComplete && flights.length > 0;
+  if (!webglSupported) {
+    return (
+      <div className="flex h-full w-full items-center justify-center bg-[#04080a] px-6 text-center">
+        <p className="max-w-md text-sm text-[#94A3B8]">
+          WebGL is not available in this browser, so the interactive flight globe
+          cannot be displayed.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div
       ref={containerRef}
       className="relative h-full w-full overflow-hidden"
       style={{ backgroundColor: MAP_THEME.background }}
-      onMouseLeave={clearHover}
     >
-      {projection && size.width > 0 && size.height > 0 ? (
-        <svg
-          width={size.width}
-          height={size.height}
-          viewBox={`0 0 ${size.width} ${size.height}`}
-          className="h-full w-full"
-          role="img"
-          aria-label="Personal flight route map"
-        >
-          <defs>
-            <filter id="airport-glow" x="-100%" y="-100%" width="300%" height="300%">
-              <feGaussianBlur stdDeviation="2.4" result="blur" />
-              <feMerge>
-                <feMergeNode in="blur" />
-                <feMergeNode in="SourceGraphic" />
-              </feMerge>
-            </filter>
-          </defs>
-
-          <rect
-            x={0}
-            y={0}
-            width={size.width}
-            height={size.height}
-            fill={MAP_THEME.ocean}
-          />
-
-          <g>
-            {countryPaths.map((country) => (
-              <path
-                key={country.key}
-                d={country.d}
-                fill={MAP_THEME.land}
-                stroke={MAP_THEME.borderSubtle}
-                strokeWidth={0.6}
-              />
-            ))}
-          </g>
-
-          <g>
-            {routes.map((route, index) => (
-              <AnimatedRoutePath
-                key={route.id}
-                route={route}
-                isSelected={route.id === selectedFlightId}
-                isHovered={route.id === hoveredRouteId}
-                animate={playIntroAnimation}
-                animationDelayMs={index * INTRO_STAGGER_MS}
-                onMouseEnter={(event) => handleRouteMouseEnter(route, event)}
-                onMouseLeave={clearHover}
-                onClick={() => onSelectFlight(route.flight)}
-              />
-            ))}
-          </g>
-
-          <g filter="url(#airport-glow)">
-            {airports.map((airport) => {
-              const isHovered = airport.iata === hoveredAirportIata;
-
-              return (
-                <g
-                  key={airport.iata}
-                  className="cursor-default"
-                  onMouseEnter={(event) => handleAirportMouseEnter(airport, event)}
-                  onMouseLeave={clearHover}
-                >
-                  <circle
-                    cx={airport.x}
-                    cy={airport.y}
-                    r={
-                      isHovered
-                        ? MAP_ROUTE_STYLES.airportHaloRadiusHover
-                        : MAP_ROUTE_STYLES.airportHaloRadius
-                    }
-                    fill={
-                      isHovered
-                        ? FLIGHT_MAP_COLORS.airportHaloHover
-                        : FLIGHT_MAP_COLORS.airportHalo
-                    }
-                  />
-                  <circle
-                    cx={airport.x}
-                    cy={airport.y}
-                    r={MAP_ROUTE_STYLES.airportCoreRadius}
-                    fill={FLIGHT_MAP_COLORS.airportCore}
-                  />
-                </g>
-              );
-            })}
-          </g>
-        </svg>
-      ) : null}
-
-      {tooltip ? (
-        <div
-          className="pointer-events-none absolute z-20"
-          style={{ left: tooltip.x, top: tooltip.y }}
-        >
-          {tooltip.kind === "route" && tooltip.route ? (
-            <FlightRouteTooltip flight={tooltip.route.flight} />
-          ) : null}
-          {tooltip.kind === "airport" && tooltip.airport ? (
-            <FlightAirportTooltip
-              iata={tooltip.airport.iata}
-              name={tooltip.airport.name}
-              visitCount={tooltip.airport.visitCount}
-            />
-          ) : null}
-        </div>
+      {dimensions.width > 0 && dimensions.height > 0 ? (
+        <Globe
+          ref={globeRef}
+          width={dimensions.width}
+          height={dimensions.height}
+          backgroundColor="rgba(4, 8, 10, 0)"
+          globeMaterial={globeMaterial}
+          atmosphereColor="#5eead4"
+          atmosphereAltitude={0.14}
+          polygonsData={countries}
+          polygonCapColor={() => GLOBE_THEME.land}
+          polygonSideColor={() => "#0a1214"}
+          polygonStrokeColor={() => GLOBE_THEME.border}
+          polygonAltitude={0.004}
+          arcsData={[]}
+          pathsData={paths}
+          pathPoints={(obj) => asPath(obj).points}
+          pathPointLat={(point) => (point as { lat: number }).lat}
+          pathPointLng={(point) => (point as { lng: number }).lng}
+          pathPointAlt={(point) => (point as { alt: number }).alt}
+          pathColor={getPathColor}
+          pathStroke={getPathStroke}
+          pathDashLength={(obj) => {
+            const path = asPath(obj);
+            if (path.isGlow) return 0;
+            if (path.kind === "route") {
+              return path.routeKey === selectedRouteKey ? 0.45 : 1;
+            }
+            return path.flight?.id === selectedFlightId ? 0.4 : 0.35;
+          }}
+          pathDashGap={(obj) => {
+            const path = asPath(obj);
+            if (path.isGlow) return 0;
+            if (path.kind === "route") {
+              return path.routeKey === selectedRouteKey ? 0.2 : 0;
+            }
+            return path.flight?.id === selectedFlightId ? 0.35 : 0.65;
+          }}
+          pathDashAnimateTime={(obj) => {
+            const path = asPath(obj);
+            if (path.isGlow) return 0;
+            if (path.kind === "route") {
+              return path.routeKey === selectedRouteKey ? 2800 : 0;
+            }
+            return path.flight?.id === selectedFlightId ? 2600 : 4500;
+          }}
+          pathLabel={(obj) => {
+            const path = asPath(obj);
+            if (path.kind === "route" && path.route) {
+              return renderAggregatedRouteLabelHtml(path.route);
+            }
+            if (path.flight) {
+              return renderFlightPathLabelHtml(path.flight);
+            }
+            return "";
+          }}
+          onPathClick={(path) => {
+            if (!path) return;
+            const datum = asPath(path);
+            if (datum.kind === "route") {
+              onSelectRoute(datum.routeKey);
+              return;
+            }
+            if (datum.flight) {
+              onSelectFlight(datum.flight);
+            }
+          }}
+          onPathHover={(path) => {
+            if (!path) {
+              setHoveredRouteKey(null);
+              setHoveredFlightId(null);
+              return;
+            }
+            const datum = asPath(path);
+            if (datum.kind === "route") {
+              setHoveredRouteKey(datum.routeKey);
+              setHoveredFlightId(null);
+              return;
+            }
+            setHoveredFlightId(datum.flight?.id ?? null);
+            setHoveredRouteKey(null);
+          }}
+          pointsData={airports}
+          pointLat={(obj) => asAirport(obj).lat}
+          pointLng={(obj) => asAirport(obj).lng}
+          pointColor={() => FLIGHT_MAP_COLORS.airportCore}
+          pointAltitude={0.012}
+          pointRadius={0.26}
+          pointLabel={(obj) => renderAirportLabelHtml(asAirport(obj))}
+        />
       ) : null}
     </div>
   );

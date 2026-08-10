@@ -2,6 +2,7 @@ import "server-only";
 
 import { getAirportByIata } from "@/lib/flights/airports";
 import { calculateDistanceKm } from "@/lib/flights/distance";
+import { normalizeAirport } from "@/lib/flights/location-normalize";
 import { mapRowToFlight, mapRowsToFlights } from "@/lib/flights/mappers";
 import {
   type CreateFlightPayload,
@@ -56,38 +57,62 @@ function resolveAirport(
     name?: string | null;
     city?: string | null;
     country?: string | null;
+    countryCode?: string | null;
     lat?: number;
     lng?: number;
   }
 ) {
+  const local = getAirportByIata(iata);
+
   if (
     overrides?.lat !== undefined &&
     overrides?.lng !== undefined &&
     overrides.lat !== null &&
     overrides.lng !== null
   ) {
+    const normalized = normalizeAirport({
+      airportCode: iata,
+      name: overrides.name ?? local?.name ?? iata,
+      city: overrides.city ?? local?.city ?? "",
+      country: overrides.country ?? local?.country ?? "",
+      countryCode: overrides.countryCode ?? local?.countryCode,
+      latitude: overrides.lat,
+      longitude: overrides.lng,
+    });
+
     return {
-      iata: iata.toUpperCase(),
-      name: overrides.name ?? iata,
-      city: overrides.city ?? "",
-      country: overrides.country ?? "",
+      iata: normalized.airportCode,
+      name: normalized.name,
+      city: normalized.city,
+      country: normalized.countryName,
+      countryCode: normalized.countryCode,
       latitude: overrides.lat,
       longitude: overrides.lng,
     };
   }
 
-  const airport = getAirportByIata(iata);
-  if (!airport) {
+  if (!local) {
     return null;
   }
 
+  const normalized = normalizeAirport({
+    airportCode: local.iata,
+    name: overrides?.name ?? local.name,
+    city: overrides?.city ?? local.city,
+    country: overrides?.country ?? local.country,
+    countryCode: overrides?.countryCode ?? local.countryCode,
+    latitude: local.latitude,
+    longitude: local.longitude,
+  });
+
   return {
-    iata: airport.iata,
-    name: overrides?.name ?? airport.name,
-    city: overrides?.city ?? airport.city,
-    country: overrides?.country ?? airport.country,
-    latitude: airport.latitude,
-    longitude: airport.longitude,
+    iata: normalized.airportCode,
+    name: normalized.name,
+    city: normalized.city,
+    country: normalized.countryName,
+    countryCode: normalized.countryCode,
+    latitude: local.latitude,
+    longitude: local.longitude,
   };
 }
 
@@ -311,6 +336,77 @@ export async function findPotentialDuplicate(
   return mapRowToFlight(data as FlightRow);
 }
 
+function needsCanonicalCountryRewrite(
+  stored: string | null | undefined,
+  canonicalName: string
+): boolean {
+  if (!stored) return Boolean(canonicalName);
+  if (stored === canonicalName) return false;
+  // Rewrite bare ISO codes (and other non-canonical labels) to English names.
+  return true;
+}
+
+/** Persist canonical country/city names when older rows still store ISO codes. */
+async function backfillCanonicalLocations(rows: FlightRow[]): Promise<void> {
+  const supabase = createServerSupabaseClient();
+
+  await Promise.all(
+    rows.map(async (row) => {
+      const departure = normalizeAirport({
+        airportCode: row.departure_iata,
+        name: row.departure_airport,
+        city: row.departure_city,
+        country: row.departure_country,
+      });
+      const arrival = normalizeAirport({
+        airportCode: row.arrival_iata,
+        name: row.arrival_airport,
+        city: row.arrival_city,
+        country: row.arrival_country,
+      });
+
+      const update: Partial<FlightInsert> = {};
+
+      if (
+        needsCanonicalCountryRewrite(
+          row.departure_country,
+          departure.countryName
+        )
+      ) {
+        update.departure_country = departure.countryName || null;
+      }
+      if (
+        departure.city &&
+        row.departure_city?.trim() !== departure.city
+      ) {
+        update.departure_city = departure.city;
+      }
+      if (
+        needsCanonicalCountryRewrite(row.arrival_country, arrival.countryName)
+      ) {
+        update.arrival_country = arrival.countryName || null;
+      }
+      if (arrival.city && row.arrival_city?.trim() !== arrival.city) {
+        update.arrival_city = arrival.city;
+      }
+
+      if (Object.keys(update).length === 0) return;
+
+      const { error } = await supabase
+        .from("flights")
+        .update(update)
+        .eq("id", row.id);
+
+      if (error) {
+        console.warn(
+          `[flights] Failed to backfill location for ${row.id}:`,
+          error.message
+        );
+      }
+    })
+  );
+}
+
 export async function listFlights(): Promise<Flight[]> {
   const supabase = createServerSupabaseClient();
 
@@ -325,7 +421,14 @@ export async function listFlights(): Promise<Flight[]> {
     throw new Error("DATABASE_ERROR");
   }
 
-  return mapRowsToFlights((data ?? []) as FlightRow[]);
+  const rows = (data ?? []) as FlightRow[];
+
+  // Best-effort: rewrite "CA" → "Canada" (etc.) so the DB stores names.
+  void backfillCanonicalLocations(rows).catch((backfillError) => {
+    console.warn("[flights] Location backfill failed:", backfillError);
+  });
+
+  return mapRowsToFlights(rows);
 }
 
 export async function getFlightById(id: string): Promise<Flight | null> {

@@ -14,13 +14,19 @@ export interface Flight {
   departureIata: string;
   departureAirport: string | null;
   departureCity: string | null;
+  /** Canonical English country name for display. */
   departureCountry: string | null;
+  /** ISO 3166-1 alpha-2 code for aggregation (derived/normalized). */
+  departureCountryCode: string | null;
   departureLat: number;
   departureLng: number;
   arrivalIata: string;
   arrivalAirport: string | null;
   arrivalCity: string | null;
+  /** Canonical English country name for display. */
   arrivalCountry: string | null;
+  /** ISO 3166-1 alpha-2 code for aggregation (derived/normalized). */
+  arrivalCountryCode: string | null;
   arrivalLat: number;
   arrivalLng: number;
   departureDate: string;
@@ -75,4 +81,5 @@ export interface FlightStats {
   totalDistanceKm: number;
   uniqueAirports: number;
   uniqueCountries: number;
+  uniqueCities: number;
 }
